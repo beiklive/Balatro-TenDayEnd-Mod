@@ -37,7 +37,11 @@ G = {
     E_MANAGER = { add_event = function(self, ev) if ev and ev.func then ev.func() end end },
     jokers = { cards = {}, config = { card_limit = 5 }, emplace = function(self, c) table.insert(self.cards, c) end },
     hand = { cards = {}, highlighted = {}, config = { card_limit = 8 },
-             change_size = function(self, n) self.size_delta = (self.size_delta or 0) + n end,
+             change_size = function(self, n)
+                 self.config.card_limit = (self.config.card_limit or 8) + n
+                 self.size_delta = (self.size_delta or 0) + n
+             end,
+             add_to_highlighted = function(self, c, silent) self.hl = c; return c end,
              emplace = function(self, c) table.insert(self.cards, c) end, remove_card = noop,
              sort = function(self) STUB.sort = (STUB.sort or 0) + 1 end,
              unhighlight_all = function(self) self.highlighted = {} end },
@@ -931,5 +935,161 @@ for _, bucket in ipairs({ reg.jokers, reg.consumables, reg.vouchers, reg.tags, r
     end
 end
 eq('中文数值段都带「倍率/筹码」单位' .. (bad_unit > 0 and (' [如 ' .. bad_unit_seg .. ']') or ''), bad_unit, 0)
+
+print('== 盲注（Boss）效果 ==')
+local bk = {}
+for _, b in ipairs(reg.blinds) do bk[b.key] = b end
+eq('盲注数量', #reg.blinds, 12)
+
+-- 字段完备性（缺 boss_colour 会让盲注说明弹窗崩，见 §21）
+local no_colour, no_mult, no_dollars, bad_pos = 0, 0, 0, 0
+for i, b in ipairs(reg.blinds) do
+    if not b.boss_colour then no_colour = no_colour + 1 end
+    if type(b.mult) ~= 'number' then no_mult = no_mult + 1 end
+    if type(b.dollars) ~= 'number' then no_dollars = no_dollars + 1 end
+    if not (b.pos and b.pos.x == 0 and b.pos.y == i - 1) then bad_pos = bad_pos + 1 end
+end
+eq('盲注都有 boss_colour', no_colour, 0)
+eq('盲注都有 mult（= 需求分数倍率）', no_mult, 0)
+eq('盲注都有 dollars（= 击败奖励）', no_dollars, 0)
+eq('盲注图集坐标 y = 0..11 且 x = 0', bad_pos, 0)
+
+-- 底注覆盖：按 get_new_boss 的判定（只看 min 与 showdown）
+local function eligible(ante)
+    local n, showdown = 0, 0
+    for _, b in ipairs(reg.blinds) do
+        local is_sd = b.boss.showdown == true
+        local ok
+        if is_sd then ok = (ante % 10 == 0 and ante >= 2)
+        else ok = (b.boss.min <= ante and (ante % 10 ~= 0 or ante < 2)) end
+        if ok then n = n + 1; if is_sd then showdown = showdown + 1 end end
+    end
+    return n, showdown
+end
+local no_boss = 0
+for ante = 1, 10 do if (eligible(ante)) == 0 then no_boss = no_boss + 1 end end
+eq('天 1–10 每个底注都有可用 Boss（否则退回原版 bl_wall）', no_boss, 0)
+eq('第 10 天只有天龙（showdown）可用', select(2, eligible(10)), 1)
+local early_sd = 0
+for ante = 1, 9 do early_sd = early_sd + select(2, eligible(ante)) end
+eq('天 1–9 不会出现 showdown 盲注', early_sd, 0)
+
+-- debuff 只能用设备源码支持的字段（blind.lua:687 Blind:debuff_card）
+local VALID_DEBUFF = { suit = true, value = true, nominal = true, is_face = true, hand = true, h_size_ge = true, h_size_le = true }
+local bad_debuff = 0
+for _, b in ipairs(reg.blinds) do
+    for k, v in pairs(b.debuff or {}) do
+        if not VALID_DEBUFF[k] then bad_debuff = bad_debuff + 1 end
+        if k == 'is_face' and v ~= 'face' then bad_debuff = bad_debuff + 1 end
+    end
+end
+eq("debuff 字段合法且 is_face 必须是字符串 'face'", bad_debuff, 0)
+
+-- 设备版 blind.lua 没有 blind.calculate 的分派点
+local calc_used = 0
+for _, b in ipairs(reg.blinds) do if b.calculate then calc_used = calc_used + 1 end end
+eq('盲注不依赖未被分派的 calculate', calc_used, 0)
+eq('天龙用 modify_hand 做计分修正', type(bk.dragon.modify_hand), 'function')
+eq('地猴用 press_play 做出牌时机效果', type(bk.monkey.press_play), 'function')
+
+-- 行为：施加 / 还原 / 幂等 / 读档安全
+local function new_blind(center)
+    return { config = { blind = center }, chips = 1000, chip_text = '1000', disabled = false, boss = true }
+end
+local function base_game()
+    return { challenge = 'blh_zhongyan', blh_dao = 0, round = 3, dollars = 4,
+             modifiers = {}, banned_keys = {},
+             round_resets = { hands = 4, ante = 5 },
+             current_round = { hands_left = 4, discards_left = 3, dollars_to_be_earned = '' } }
+end
+
+-- 人牛：出牌次数 -1（先前误做成 The Needle 式只留 1 次）
+G.GAME = base_game(); G.GAME.blind = new_blind(bk.ox)
+bk.ox.set_blind(bk.ox)
+eq('人牛：出牌次数 -1', G.GAME.current_round.hands_left, 3)
+bk.ox.set_blind(bk.ox)
+eq('人牛：重复 set_blind 不叠加', G.GAME.current_round.hands_left, 3)
+bk.ox.disable(bk.ox)
+eq('人牛：disable 还原', G.GAME.current_round.hands_left, 4)
+bk.ox.disable(bk.ox)
+eq('人牛：重复 disable 不重复加回', G.GAME.current_round.hands_left, 4)
+G.GAME.current_round.hands_left = 3
+G.GAME.blind = { config = { blind = bk.ox }, hands_sub = 1, disabled = false, chips = 1000 }
+bk.ox.disable(bk.ox)
+eq('人牛：读档后 disable 仍能还原（hands_sub 进存档）', G.GAME.current_round.hands_left, 4)
+
+-- 人兔：弃牌清零
+G.GAME = base_game(); G.GAME.blind = new_blind(bk.rabbit)
+bk.rabbit.set_blind(bk.rabbit)
+eq('人兔：弃牌次数清零', G.GAME.current_round.discards_left, 0)
+bk.rabbit.set_blind(bk.rabbit)
+eq('人兔：重复 set_blind 不叠加', G.GAME.current_round.discards_left, 0)
+bk.rabbit.disable(bk.rabbit)
+eq('人兔：disable 还原弃牌次数', G.GAME.current_round.discards_left, 3)
+G.GAME.current_round.discards_left = 0
+G.GAME.blind = { config = { blind = bk.rabbit }, discards_sub = 3, disabled = false, chips = 1000 }
+bk.rabbit.disable(bk.rabbit)
+eq('人兔：读档后 disable 仍能还原（discards_sub 进存档）', G.GAME.current_round.discards_left, 3)
+
+-- 地猴 / 天狗：手牌上限是持久值，必须能被 defeat 还原，且不能二次还原
+G.GAME = base_game(); G.hand.config.card_limit = 8
+G.GAME.blind = new_blind(bk.monkey)
+bk.monkey.set_blind(bk.monkey)
+eq('地猴：手牌上限 -1', G.hand.config.card_limit, 7)
+bk.monkey.defeat(bk.monkey)
+eq('地猴：defeat 还原手牌上限', G.hand.config.card_limit, 8)
+G.GAME.blind = new_blind(bk.monkey)
+bk.monkey.set_blind(bk.monkey)
+bk.monkey.disable(bk.monkey)
+bk.monkey.defeat(bk.monkey)
+eq('地猴：disable 之后 defeat 不二次还原（否则白赚 +1）', G.hand.config.card_limit, 8)
+G.hand.config.card_limit = 7
+G.GAME.blind = { config = { blind = bk.monkey }, disabled = false, chips = 1000 }
+bk.monkey.defeat(bk.monkey)
+eq('地猴：读档后 defeat 仍能还原（减少量已在存档里）', G.hand.config.card_limit, 8)
+G.GAME.blind = new_blind(bk.dog); G.hand.config.card_limit = 8
+bk.dog.set_blind(bk.dog)
+eq('天狗：手牌上限 -2', G.hand.config.card_limit, 6)
+bk.dog.defeat(bk.dog)
+eq('天狗：defeat 还原', G.hand.config.card_limit, 8)
+
+-- 天猪：筹码缩放只作用一次，新一次登场重新掷
+G.GAME = base_game(); G.GAME.blind = new_blind(bk.pig)
+bk.pig.set_blind(bk.pig)
+local pig1 = G.GAME.blind.chips
+eq('天猪：要求分数被缩放', pig1 ~= 1000, true)
+eq('天猪：缩放落在 ×0.8~×1.4', pig1 >= 800 and pig1 <= 1400, true)
+eq('天猪：chip_text 同步', G.GAME.blind.chip_text, number_format(pig1))
+bk.pig.set_blind(bk.pig)
+eq('天猪：重复 set_blind 不重复缩放', G.GAME.blind.chips, pig1)
+bk.pig.defeat(bk.pig)
+G.GAME.blind = new_blind(bk.pig)
+bk.pig.set_blind(bk.pig)
+eq('天猪：新一次登场会重新缩放', G.GAME.blind.chips ~= 1000, true)
+
+-- 天龙：强度随道提升 + 天秤计分 ×0.5
+G.GAME = base_game(); G.GAME.blh_dao = 1000; G.GAME.blind = new_blind(bk.dragon)
+bk.dragon.set_blind(bk.dragon)
+eq('天龙：1000 道时强度 ×1.2', math.floor(G.GAME.blind.chips + 0.5), 1200)
+local only_spades = { { is_suit = function(self, s) return s == 'Spades' end } }
+local mixed = { { is_suit = function(self, s) return s == 'Spades' end },
+                { is_suit = function(self, s) return s == 'Hearts' end } }
+local m1, c1, modded = bk.dragon.modify_hand(bk.dragon, only_spades, {}, 'Flush', 100, 500)
+eq('天龙：黑桃/梅花占比极端时计分 ×0.5', m1, 50)
+eq('天龙：modify_hand 返回 triggered = true', modded, true)
+eq('天龙：不改筹码', c1, 500)
+local m2 = bk.dragon.modify_hand(bk.dragon, mixed, {}, 'Pair', 100, 500)
+eq('天龙：花色混合时不减半', m2, 100)
+
+-- 地猴：press_play 随机弃 1 张手牌，且不消耗弃牌次数（同原版 The Hook）
+G.GAME = base_game(); G.GAME.blind = new_blind(bk.monkey)
+G.FUNCS.discard_cards_from_highlighted = function(e, hook) STUB.discarded = (STUB.discarded or 0) + 1; STUB.hook = hook end
+G.hand.cards = { { id = 1 }, { id = 2 } }
+STUB.discarded, STUB.hook = 0, nil
+local pp = bk.monkey.press_play(bk.monkey)
+eq('地猴：press_play 返回 true（触发盲注抖动动画）', pp, true)
+eq('地猴：随机弃掉 1 张手牌', STUB.discarded, 1)
+eq('地猴：弃牌不消耗弃牌次数', STUB.hook, true)
+eq('地猴：弃牌次数未被改动', G.GAME.current_round.discards_left, 3)
 
 print(('ALL PASS (%d checks)'):format(passed))

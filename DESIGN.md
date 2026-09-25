@@ -183,20 +183,26 @@
 
 ## 8. 盲注（12 生肖 Boss）
 
-| key | 名称 | 级 | 效果 |
-|---|---|---|---|
-| [ ] blh_rat | 人鼠·仓库寻道 | 人 | 每回合随机 1 张手牌背面 |
-| [ ] blh_ox | 人牛·障碍赛跑 | 人 | 出牌次数 -1 |
-| [ ] blh_tiger | 人虎·狭路相逢 | 人 | 打出少于 5 张时计分 ×0.5 |
-| [ ] blh_rabbit | 人兔·蓬莱 | 人 | 弃牌次数 0 |
-| [ ] blh_snake | 地蛇·少数与多数 | 地 | 同一牌型不能连续使用 |
-| [ ] blh_horse | 地马·木牛流马 | 地 | 每次出牌后手牌上限 -1 |
-| [ ] blh_goat | 地羊·四情扇 | 地 | 随机 1 花色 debuff，每回合更换 |
-| [ ] blh_monkey | 地猴·箱中道 | 地 | 每次出牌后随机弃 1 张手牌 |
-| [ ] blh_rooster | 天鸡·兵器牌 | 天 | 每张计分牌 1/4 概率 debuff |
-| [ ] blh_dog | 天狗·送信人 | 天 | 必须按上一手张数出牌 |
-| [ ] blh_pig | 天猪·黑白棋子 | 天 | 需求分数随机 ×0.8~×1.4 |
-| [ ] blh_dragon | 天龙·天秤游戏 | 天（最终） | Chips/Mult 差距过大 ×0.5，禁用幻灵 |
+> 早期设计表与本表不同（8/12 项），**以本表为准**——它是实际实现（`content/blinds.lua`），
+> 游戏内描述与之一致。审计过程与修复见 §26。
+
+| key | 名称 | 级 | 效果 | 实现方式 |
+|---|---|---|---|---|
+| `blh_rat` | 人鼠·仓库寻道 | 人 | 方片全部失效 | `debuff = { suit = 'Diamonds' }` |
+| `blh_ox` | 人牛·障碍赛跑 | 人 | 出牌次数 **-1** | `set_blind` + `hands_sub = 1`（原版 The Needle 同款字段） |
+| `blh_tiger` | 人虎·狭路相逢 | 人 | 人头牌全部失效 | `debuff = { is_face = 'face' }` |
+| `blh_rabbit` | 人兔·蓬莱 | 人 | 弃牌次数清零 | `set_blind` + `discards_sub`（原版 The Water 同款字段） |
+| `blh_snake` | 地蛇·少数与多数 | 地 | 梅花全部失效 | `debuff = { suit = 'Clubs' }` |
+| `blh_horse` | 地马·木牛流马 | 地 | 需求分数 **×2.2** | `mult = 2.2`（`chips = get_blind_amount(天) × mult`） |
+| `blh_goat` | 地羊·四情扇 | 地 | 红桃全部失效 | `debuff = { suit = 'Hearts' }` |
+| `blh_monkey` | 地猴·箱中道 | 地 | 手牌上限 **-1**；每次出牌随机弃 1 张手牌 | `change_size(-1)` + `press_play` |
+| `blh_rooster` | 天鸡·兵器牌 | 天 | 人头牌全部失效 | `debuff = { is_face = 'face' }` |
+| `blh_dog` | 天狗·送信人 | 天 | 手牌上限 **-2** | `change_size(-2)` |
+| `blh_pig` | 天猪·黑白棋子 | 天 | 需求分数随机 **×0.8 ~ ×1.4** | `set_blind` 直接乘 `G.GAME.blind.chips` |
+| `blh_dragon` | 天龙·天秤游戏 | 天（最终） | 黑桃/梅花占比极端（0 张或全）时计分 **×0.5**；强度 **×(1+⌊道/500⌋×0.1)** | `modify_hand` + `set_blind` |
+
+出场：`boss.min` 分段（1–3 / 4–7 / 8–9），天龙 `min = 10, showdown = true`；
+`get_new_boss` 只认 `min` 与 `showdown`，故 1–9 天不会出现天龙、第 10 天只可能是天龙。
 
 ## 9. 版本 / 封印 / 贴纸
 
@@ -767,3 +773,64 @@ functions/misc_functions.lua:869: attempt to index local 'C1' (a nil value)
 - `banned_cards` 保持短列表（≤10，不做 600 张精灵展示）
 - `G.GAME.banned_keys` 含原版小丑/塔罗/幻灵/优惠券/版本/标签/Boss 盲注，不含小/大盲注，不含本模组内容
 - 可见自定义规则里有 `blh_hardcore`
+
+---
+
+## 26. 盲注（Boss）效果审计
+
+逐个核对 12 张生肖盲注「描述 vs 实现 vs 设备版分派点」，发现并修掉 4 类问题。
+
+### 26.1 设备版 `blind.lua` 实际分派哪些盲注钩子
+
+`/tmp/dump`（26.829.0）里 `blind.lua` 全部分派点：
+
+| 行 | 分派 | 含义 |
+|---|---|---|
+| 191 | `obj:set_blind()` | 盲注登场（读档走 `Blind:load`，**不会**再调用它） |
+| 377 | `obj:defeat()` | 被击败 |
+| 404 | `obj:disable()` | 被禁用（本模组的「破万法」就调用 `G.GAME.blind:disable()`） |
+| 507 | `obj:press_play()` | 按下出牌（原版 The Hook 在此弃牌） |
+| 553 | `obj:modify_hand(cards, poker_hands, text, mult, hand_chips)` | 计分修正（原版 The Flint） |
+| 565 | `obj:debuff_hand(...)` | 该手牌是否被封印 |
+| 620 | `obj:drawn_to_hand()` | 抽牌后 |
+| 689 / 697 | `obj:recalc_debuff` / `obj:debuff_card` | 单张牌的 debuff 判定 |
+
+**没有 `blind.calculate` 的分派点。** 官方 wiki 列了 `calculate(self, blind, context)`，
+但设备源码里找不到调用方（可能在未 dump 的 SMODS 核心里），因此凡是**关键效果**都改到上表里确有分派点的钩子上。
+
+### 26.2 修掉的问题
+
+| # | 问题 | 证据 | 修复 |
+|---|---|---|---|
+| 1 | **人牛文案与行为不符**：描述「出牌次数 -1」，实现却是 The Needle 式「只留 1 次」（基础 4 手时等于 -3） | `hands_sub = G.GAME.round_resets.hands - 1` | 改为 `hands_sub = 1` + `ease_hands_played(-1)`；描述不变 |
+| 2 | **地猴 / 天龙的效果挂在 `blind.calculate` 上**（可能永不触发）：地猴「每次出牌后随机弃 1 张」、天龙「天秤失衡计分 ×0.5」 | 26.1：`blind.lua` 无该分派点 | 地猴改 `press_play`（同 The Hook，`hook = true` 不消耗弃牌次数）；天龙改 `modify_hand`（返回 `mult/2, hand_chips, true`） |
+| 3 | **读档后惩罚无法还原**：施加标记 `_applied` 与次数存在 SMODS.Blind **中心对象**上，中心是单例且字段不入存档；`Blind:load` 又不会重调 `set_blind` → 读档后标记丢失，`defeat/disable` 直接返回，**手牌上限的减少会被永久留在牌局里** | `Blind:save`（774 行）只保存固定字段；`Blind:load` 不调用 `set_blind` | 次数类改用原版会进存档的 `hands_sub` / `discards_sub`（The Needle / The Water 同款）；手牌上限在「当前盲注确实是本盲注」时无条件还原；并补 `disable` 后 `defeat` 不二次还原（对齐原版 The Manacle 的 `not self.disabled` 判断） |
+| 4 | **天猪 / 天龙的缩放标记会跨登场残留**：标记写在 `G.GAME.blind`（整个 run 复用同一个实例，`set_blind` 不会清自定义字段）→ 同一 Boss 第二次上场（无尽模式/提前天龙后再遇）不再缩放 | `Blind:save/load` 与 `set_blind` 的字段重置列表 | 改为「本次登场一次」：中心上打标，`defeat` / `disable` 时清除 |
+
+### 26.3 复核通过（无需修改）
+
+- **debuff 字段**：`blind.lua:687` 只认 `suit` / `value` / `nominal` / `is_face == 'face'` / `hand` / `h_size_ge` / `h_size_le` —— 本模组只用了 `suit` 与 `is_face = 'face'` ✅
+- **`mult` / `dollars` 语义**：`chips = get_blind_amount(天) × mult × ante_scaling`（135 行）、`dollars` = 击败奖励 ✅ 地马的 ×2.2 生效路径正确
+- **`boss_colour`**：12 张全部声明（缺了会在盲注说明弹窗崩溃，见 §21）✅
+- **出场覆盖**：按 `get_new_boss` 的真实判定（只看 `min` 与 `showdown`）模拟 1–10 天：每天都 ≥1 个可用 Boss，1–9 天无 showdown，第 10 天只有天龙 ✅ 不会退回原版 `bl_wall`
+- **HUD 需求分数**：`UI_definitions.lua:1459` 用 `ref_table = G.GAME.blind, ref_value = 'chip_text'` 实时绑定，`set_blind` 里改 `chips/chip_text` 会立刻反映到界面 ✅
+- **时序**：`obj:set_blind()` 在 `chips` 计算之后调用（135 → 191），所以天猪/天龙可以直接改 `chips`，不需要延迟事件 ✅
+
+### 26.4 新增自动回归（215 项）
+
+- 12 张盲注的 `boss_colour` / `mult` / `dollars` / 图集坐标
+- 1–10 天出场覆盖、1–9 天无 showdown、第 10 天仅天龙
+- `debuff` 字段白名单 + `is_face` 必须是字符串 `'face'`
+- 禁止使用未被分派的 `blind.calculate`；天龙必须有 `modify_hand`、地猴必须有 `press_play`
+- 行为：人牛 -1 且幂等、人兔清零且幂等、**读档后（自定义标记清空、`hands_sub` / `discards_sub` 来自存档）仍能还原**
+- 行为：地猴/天狗手牌上限还原；`disable` 后 `defeat` 不二次还原（否则白赚手牌上限）
+- 行为：天猪缩放落在 ×0.8~×1.4、重复调用不叠加、**新一次登场会重新缩放**
+- 行为：天龙 1000 道时强度 ×1.2；黑桃/梅花占比极端时 `modify_hand` 返回减半 + `triggered = true`，混合花色时不减半
+- 行为：地猴 `press_play` 恰好弃 1 张、`hook = true`（不消耗弃牌次数）
+
+### 26.5 仍需真机确认
+
+- 人牛在场时左上角出牌次数应为「3」（原为 1）。
+- 地猴：每次出牌时手里随机少 1 张牌；击败后手牌上限回到 8。
+- 天龙：全场黑桃（或完全不含黑桃/梅花）时打出的那一手，倍率与筹码被砍半并弹出「天秤失衡」提示。
+- 天猪：需求分数在基础值的 0.8~1.4 倍之间，且 HUD 数字同步变化。
