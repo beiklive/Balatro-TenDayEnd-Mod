@@ -1,0 +1,8 @@
+# macOS
+.DS_Store
+
+# 开发脚本产物
+dev/contact.png
+dev/__pycache__/
+*.pyc
+*.log
