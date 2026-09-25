@@ -7,7 +7,7 @@
     "description": "beiklive助手 v2：十日终焉主题。含「终焉之地」挑战模式、独立货币「道」与结算系统，以及 30 回响小丑 / 21 塔罗 / 10 幻灵 / 16 优惠券 / 16 标签 / 12 生肖 Boss / 5 版本 / 5 封印 / 5 贴纸。",
     "prefix": "blh",
     "main_file": "main.lua",
-    "version": "2.3.3",
+    "version": "2.3.4",
     "badge_colour": "4a90d9",
     "dependencies": [
         "Steamodded"

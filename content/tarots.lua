@@ -78,8 +78,9 @@ end
 SMODS.Consumable {
     key = 'dominion', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 0, y = 0 }, cost = 4, discovered = true,
     config = { max_highlighted = 2 },
-    loc_txt = loc('权柄', 'The Dominion', { '将选中的至多 {C:attention}2{} 张手牌', '点数变为 {C:attention}A{}' },
-        { 'Turns up to {C:attention}2{} selected cards', 'into {C:attention}Aces{}' }),
+    loc_txt = loc('权柄', 'The Dominion',
+        { '将选中的 {C:attention}1~2{} 张手牌点数变为 {C:attention}A{}', '{C:inactive}（至少选中 1 张，至多 2 张）' },
+        { 'Turns the selected {C:attention}1~2{} cards into {C:attention}Aces{}', '{C:inactive}(select at least 1 card, up to 2)' }),
     can_use = function(self, card) return G.hand ~= nil and #highlighted() > 0 end,
     use = function(self, card, area, copier)
         local targets = {}
@@ -101,7 +102,9 @@ SMODS.Consumable {
 SMODS.Consumable {
     key = 'mirror', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 1, y = 0 }, cost = 4, discovered = true,
     config = { max_highlighted = 1 },
-    loc_txt = loc('镜像', 'The Mirror', { '复制选中的 {C:attention}1{} 张手牌' }, { 'Creates a copy of {C:attention}1{} selected card' }),
+    loc_txt = loc('镜像', 'The Mirror',
+        { '复制选中的 {C:attention}1{} 张手牌', '复制品保留其{C:attention}强化 / 版本 / 蜡封{}', '{C:inactive}（需手牌有空位）' },
+        { 'Copies {C:attention}1{} selected card', 'the copy keeps its {C:attention}Enhancement / Edition / Seal{}', '{C:inactive}(needs a free hand slot)' }),
     can_use = function(self, card)
         return G.hand ~= nil and #highlighted() == 1 and #G.hand.cards < G.hand.config.card_limit
     end,
@@ -129,8 +132,9 @@ SMODS.Consumable {
 SMODS.Consumable {
     key = 'ascension', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 2, y = 0 }, cost = 4, discovered = true,
     config = {},
-    loc_txt = loc('阶梯', 'The Ascension', { '手中所有牌点数 {C:attention}+1{}', '{C:inactive}（A 变为 2）' },
-        { '{C:attention}+1{} rank to every card in hand', '{C:inactive}(Aces wrap to 2)' }),
+    loc_txt = loc('阶梯', 'The Ascension',
+        { '手中所有牌点数 {C:attention}+1{}', '{C:inactive}（A 变为 2；需至少 1 张手牌）' },
+        { '{C:attention}+1{} rank to every card in hand', '{C:inactive}(Aces wrap to 2; needs at least 1 card)' }),
     can_use = function(self, card) return hand_card_count() > 0 end,
     use = function(self, card, area, copier)
         head_start(card)
@@ -147,8 +151,9 @@ SMODS.Consumable {
 SMODS.Consumable {
     key = 'pact', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 3, y = 0 }, cost = 4, discovered = true,
     config = { max_highlighted = 1, extra = { dollars = 10 } },
-    loc_txt = loc('契约', 'The Pact', { '摧毁选中的 {C:attention}1{} 张手牌', '获得 {C:money}$#1#{}' },
-        { 'Destroys {C:attention}1{} selected card', 'Earn {C:money}$#1#{}' }),
+    loc_txt = loc('契约', 'The Pact',
+        { '摧毁选中的 {C:attention}1{} 张手牌', '获得 {C:money}$#1#{}', '{C:inactive}（需选中恰好 1 张；被摧毁的牌永久离开牌堆）' },
+        { 'Destroys {C:attention}1{} selected card', 'Earn {C:money}$#1#{}', '{C:inactive}(requires exactly 1 selected; the card is gone for good)' }),
     loc_vars = function(self, iq) return { vars = { self.config.extra.dollars } } end,
     can_use = function(self, card) return G.hand ~= nil and #highlighted() == 1 end,
     use = function(self, card, area, copier)
@@ -170,7 +175,9 @@ SMODS.Consumable {
 SMODS.Consumable {
     key = 'cornucopia', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 4, y = 0 }, cost = 4, discovered = true,
     config = { extra = { per_card = 1 } },
-    loc_txt = loc('丰饶', 'The Cornucopia', { '手中每张牌获得 {C:money}$#1#{}' }, { 'Earn {C:money}$#1#{} for each card in hand' }),
+    loc_txt = loc('丰饶', 'The Cornucopia',
+        { '手中每张牌获得 {C:money}$#1#{}', '{C:inactive}（按使用时的实际手牌张数结算）' },
+        { 'Earn {C:money}$#1#{} for each card in hand', '{C:inactive}(counted at the moment of use)' }),
     loc_vars = function(self, iq) return { vars = { self.config.extra.per_card } } end,
     can_use = function(self, card) return hand_card_count() > 0 end,
     use = function(self, card, area, copier)
@@ -193,8 +200,8 @@ SMODS.Consumable {
     key = 'rat_search', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 5, y = 0 }, cost = 3, discovered = true,
     config = { max_highlighted = 1 },
     loc_txt = loc('鼠·仓库寻道', 'Rat: Warehouse Search',
-        { '选中 {C:attention}1{} 张手牌，把牌堆中', '所有{C:attention}同花色{}牌加入手牌' },
-        { 'Select {C:attention}1{} card: add every card of the', 'same {C:attention}suit{} from your deck to your hand' }),
+        { '选中 {C:attention}1{} 张牌，把牌堆中所有{C:attention}同花色{}牌', '加入手牌', '{C:inactive}（需手牌有空位、牌堆里有同花色牌；加到手牌满为止）' },
+        { 'Select {C:attention}1{} card: add every card of the', 'same {C:attention}suit{} from your deck to your hand', '{C:inactive}(needs a free slot and a matching card in the deck; stops when hand is full)' }),
     can_use = function(self, card)
         if G.hand == nil or #highlighted() ~= 1 then return false end
         if #G.hand.cards >= G.hand.config.card_limit then return false end
@@ -232,8 +239,8 @@ SMODS.Consumable {
     key = 'ox_run', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 6, y = 0 }, cost = 4, discovered = true,
     config = { max_highlighted = 3, extra = { same = 3, diff = 1 } },
     loc_txt = loc('牛·障碍赛跑', 'Ox: Obstacle Race',
-        { '选中至多 {C:attention}3{} 张牌：', '全部{C:attention}同花色{}则各点数 {C:attention}+#1#{}，否则各 {C:attention}+#2#{}' },
-        { 'Select up to {C:attention}3{} cards: if all share a {C:attention}suit{},', 'each gains {C:attention}+#1#{} rank, otherwise {C:attention}+#2#{}' }),
+        { '选中至多 {C:attention}3{} 张牌：全部{C:attention}同花色{}则各点数 {C:attention}+#1#{}，', '否则各点数 {C:attention}+#2#{}', '{C:inactive}（至多 3 张；点数上限为 A，不会再升）' },
+        { 'Select up to {C:attention}3{} cards: if they all share a {C:attention}suit{},', 'each gains {C:attention}+#1#{} rank, otherwise {C:attention}+#2#{}', '{C:inactive}(up to 3 cards; ranks cap at Ace)' }),
     loc_vars = function(self, iq) return { vars = { self.config.extra.same, self.config.extra.diff } } end,
     can_use = function(self, card) return G.hand ~= nil and #highlighted() > 0 end,
     use = function(self, card, area, copier)
@@ -265,9 +272,11 @@ SMODS.Consumable {
     key = 'tiger_duel', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 0, y = 1 }, cost = 4, discovered = true,
     config = { max_highlighted = 2, extra = { dollars = 3 } },
     loc_txt = loc('虎·狭路相逢', 'Tiger: Narrow Path',
-        { '选中 {C:attention}2{} 张{C:attention}不同花色{}牌：', '点数低者被摧毁，高者变为{C:attention}万能牌{}；同花色则各 +${#1#}' },
-        { 'Select {C:attention}2{} cards of {C:attention}different suits{}:', 'destroy the lower, the higher becomes {C:attention}Wild{}; same suit: each +${#1#}' }),
-    loc_vars = function(self, iq) return { vars = { self.config.extra.dollars } } end,
+        { '选中 {C:attention}2{} 张{C:attention}不同花色{}牌：点数低者被摧毁，', '高者变为{C:attention}万能牌{}；同花色则每张 +{C:money}$#1#{}（两张共 $#2#）', '{C:inactive}（需选中恰好 2 张；点数相同时摧毁先选的那张）' },
+        { 'Select {C:attention}2{} cards of {C:attention}different suits{}:', 'the lower is destroyed and the higher becomes {C:attention}Wild{}; same suit: +{C:money}$#1#{} each ($#2# total)', '{C:inactive}(requires exactly 2 selected; on a tie the first selected is destroyed)' }),
+    loc_vars = function(self, iq)
+        return { vars = { self.config.extra.dollars, self.config.extra.dollars * 2 } }
+    end,
     can_use = function(self, card) return G.hand ~= nil and #highlighted() == 2 end,
     use = function(self, card, area, copier)
         local a, b = highlighted()[1], highlighted()[2]
@@ -298,8 +307,8 @@ SMODS.Consumable {
     key = 'rabbit_escape', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 1, y = 1 }, cost = 4, discovered = true,
     config = { max_highlighted = 1 },
     loc_txt = loc('兔·蓬莱', 'Rabbit: Penglai',
-        { '选中 {C:attention}1{} 张牌，其花色变为', '你手中{C:attention}数量最少{}的花色' },
-        { 'Select {C:attention}1{} card: its suit becomes the', '{C:attention}least common{} suit in your hand' }),
+        { '选中 {C:attention}1{} 张牌，其花色变为你手中{C:attention}数量最少{}的花色', '{C:inactive}（并列时按 黑桃→红桃→梅花→方片 取第一个）' },
+        { 'Select {C:attention}1{} card: its suit becomes your {C:attention}least common{} suit', '{C:inactive}(ties resolved in Spades→Hearts→Clubs→Diamonds order)' }),
     can_use = function(self, card) return G.hand ~= nil and #highlighted() == 1 end,
     use = function(self, card, area, copier)
         local target = highlighted()[1]
@@ -321,8 +330,8 @@ SMODS.Consumable {
     key = 'dragon_balance', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 2, y = 1 }, cost = 4, discovered = true,
     config = {},
     loc_txt = loc('龙·跷跷板', 'Dragon: Seesaw',
-        { '手中所有牌花色统一为', '你手中{C:attention}数量最多{}的花色' },
-        { 'All cards in hand become the', '{C:attention}most common{} suit' }),
+        { '手中所有牌花色统一为你手中{C:attention}数量最多{}的花色', '{C:inactive}（需至少 2 张手牌；并列时按 黑桃→红桃→梅花→方片 取第一个）' },
+        { 'All cards in hand become your {C:attention}most common{} suit', '{C:inactive}(needs 2+ cards; ties resolved in Spades→Hearts→Clubs→Diamonds order)' }),
     can_use = function(self, card) return hand_card_count() >= 2 end,
     use = function(self, card, area, copier)
         local best = pick_suit(suit_counts(), true)
@@ -337,8 +346,8 @@ SMODS.Consumable {
     key = 'snake_vote', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 3, y = 1 }, cost = 4, discovered = true,
     config = { extra = { chips = 30, dollars = 2 } },
     loc_txt = loc('蛇·少数与多数', 'Snake: Minority Rule',
-        { '{C:attention}数量最少{}花色的所有牌 {C:chips}+#1#{}筹码', '{C:attention}数量最多{}花色的牌各 +${#2#}' },
-        { 'Every card of the {C:attention}least common{} suit gains {C:chips}+#1#{} Chips', 'Every card of the {C:attention}most common{} suit gives +${#2#}' }),
+        { '{C:attention}数量最少{}花色的每张牌{C:attention}永久{}获得 {C:chips}+#1#{}筹码，', '{C:attention}数量最多{}花色的每张牌给 {C:money}$#2#{}', '{C:inactive}（需至少 2 张手牌；并列时按 黑桃→红桃→梅花→方片 取第一个）' },
+        { 'Every card of the {C:attention}least common{} suit {C:attention}permanently{} gains {C:chips}+#1#{} Chips,', 'every card of the {C:attention}most common{} suit gives {C:money}$#2#{}', '{C:inactive}(needs 2+ cards; ties resolved in Spades→Hearts→Clubs→Diamonds order)' }),
     loc_vars = function(self, iq) return { vars = { self.config.extra.chips, self.config.extra.dollars } } end,
     can_use = function(self, card) return hand_card_count() >= 2 end,
     use = function(self, card, area, copier)
@@ -362,8 +371,8 @@ SMODS.Consumable {
     key = 'horse_race', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 4, y = 1 }, cost = 4, discovered = true,
     config = {},
     loc_txt = loc('马·木牛流马', 'Horse: Wooden Ox',
-        { '手中所有牌花色轮换一位', '{C:inactive}（黑桃→红桃→梅花→方片→黑桃）' },
-        { 'Rotate the suit of every card in hand', '{C:inactive}(Spades→Hearts→Clubs→Diamonds→Spades)' }),
+        { '手中所有牌花色轮换一位', '{C:inactive}（黑桃→红桃→梅花→方片→黑桃；需至少 1 张手牌）' },
+        { 'Rotate the suit of every card in hand', '{C:inactive}(Spades→Hearts→Clubs→Diamonds→Spades; needs at least 1 card)' }),
     can_use = function(self, card) return hand_card_count() > 0 end,
     use = function(self, card, area, copier)
         local function next_suit(s)
@@ -386,8 +395,8 @@ SMODS.Consumable {
     key = 'goat_fan', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 5, y = 1 }, cost = 4, discovered = true,
     config = {},
     loc_txt = loc('羊·四情扇', 'Goat: Four Fans',
-        { '手中所有牌花色{C:attention}随机重掷{}', '{C:inactive}（喜/怒/哀/乐 四种花色）' },
-        { 'Rerolls the suit of every card in hand', '{C:inactive}(the four suits of four moods)' }),
+        { '手中所有牌花色{C:attention}随机重掷{}', '{C:inactive}（需至少 3 张手牌；每张牌独立随机，可能重复）' },
+        { 'Rerolls the suit of every card in hand', '{C:inactive}(needs 3+ cards; each card rolls independently)' }),
     can_use = function(self, card) return hand_card_count() >= 3 end,
     use = function(self, card, area, copier)
         head_start(card)
@@ -404,8 +413,8 @@ SMODS.Consumable {
     key = 'monkey_box', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 6, y = 1 }, cost = 4, discovered = true,
     config = { max_highlighted = 1 },
     loc_txt = loc('猴·箱中道', 'Monkey: Box of Dao',
-        { '选中 {C:attention}1{} 张牌，与手中随机另一张', '{C:attention}交换花色{}' },
-        { 'Select {C:attention}1{} card: swap suits with', 'another random card in hand' }),
+        { '选中 {C:attention}1{} 张牌，与手中随机另一张牌{C:attention}交换花色{}', '{C:inactive}（需选中恰好 1 张，且手中有 2 张以上）' },
+        { 'Select {C:attention}1{} card: swap its suit with another random card in hand', '{C:inactive}(requires exactly 1 selected and 2+ cards in hand)' }),
     can_use = function(self, card) return G.hand ~= nil and #highlighted() == 1 and hand_card_count() >= 2 end,
     use = function(self, card, area, copier)
         local target = highlighted()[1]
@@ -432,8 +441,8 @@ SMODS.Consumable {
     key = 'rooster_arms', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 0, y = 2 }, cost = 4, discovered = true,
     config = { max_highlighted = 1 },
     loc_txt = loc('鸡·兵器牌', 'Rooster: Weapon Cards',
-        { '摧毁选中的 {C:attention}1{} 张牌，', '手中{C:attention}同花色{}的其他牌各变为随机强化牌' },
-        { 'Destroy {C:attention}1{} selected card: every other card of the', 'same {C:attention}suit{} becomes a random Enhancement' }),
+        { '摧毁选中的 {C:attention}1{} 张牌，手中{C:attention}同花色{}的其他牌各变为', '一张随机{C:attention}强化牌{}（会覆盖原有强化）', '{C:inactive}（需选中恰好 1 张；没有同花色其他牌时只摧毁）' },
+        { 'Destroy {C:attention}1{} selected card: every other card of the same', '{C:attention}suit{} becomes a random {C:attention}Enhancement{} (overwrites)', '{C:inactive}(requires exactly 1 selected; if nothing else shares the suit, only the card is destroyed)' }),
     can_use = function(self, card) return G.hand ~= nil and #highlighted() == 1 end,
     use = function(self, card, area, copier)
         local target = highlighted()[1]
@@ -459,8 +468,8 @@ SMODS.Consumable {
     key = 'dog_letter', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 1, y = 2 }, cost = 4, discovered = true,
     config = { max_highlighted = 2 },
     loc_txt = loc('狗·传信人', 'Dog: Messenger',
-        { '选中 {C:attention}2{} 张牌，互换两者的{C:attention}花色{}' },
-        { 'Select {C:attention}2{} cards and swap their {C:attention}suits{}' }),
+        { '选中 {C:attention}2{} 张牌，互换两者的{C:attention}花色{}', '{C:inactive}（需选中恰好 2 张；只换花色，点数不变）' },
+        { 'Select {C:attention}2{} cards and swap their {C:attention}suits{}', '{C:inactive}(requires exactly 2 selected; ranks are unchanged)' }),
     can_use = function(self, card) return G.hand ~= nil and #highlighted() == 2 end,
     use = function(self, card, area, copier)
         local a, b = highlighted()[1], highlighted()[2]
@@ -484,8 +493,8 @@ SMODS.Consumable {
     key = 'pig_gamble', set = 'Tarot', atlas = 'blh_tarot', pos = { x = 2, y = 2 }, cost = 4, discovered = true,
     config = { max_highlighted = 1, extra = { odds = 2 } },
     loc_txt = loc('猪·黑白棋子', 'Pig: Black and White',
-        { '选中 {C:attention}1{} 张牌：{C:green}#1#/#2#{} 概率', '变为{C:attention}万能牌{}，否则变为黑桃' },
-        { 'Select {C:attention}1{} card: {C:green}#1# in #2#{} chance to become', '{C:attention}Wild{}, otherwise becomes a Spade' }),
+        { '选中 {C:attention}1{} 张牌：{C:green}#1#/#2#{} 概率变为{C:attention}万能牌{}，', '否则其花色变为{C:attention}黑桃{}', '{C:inactive}（需选中恰好 1 张）' },
+        { 'Select {C:attention}1{} card: {C:green}#1# in #2#{} chance to become {C:attention}Wild{},', 'otherwise its suit becomes {C:attention}Spades{}', '{C:inactive}(requires exactly 1 selected)' }),
     loc_vars = function(self, iq, card)
         local n, d = SMODS.get_probability_vars(card, 1, self.config.extra.odds, 'blh_pig')
         return { vars = { n, d } }
@@ -517,8 +526,9 @@ local function make_beast_tarot(key, zh_name, en_name, suit, suit_zh, x, y)
     SMODS.Consumable {
         key = key, set = 'Tarot', atlas = 'blh_tarot', pos = { x = x, y = y }, cost = 3, discovered = true,
         config = {},
-        loc_txt = loc(zh_name, en_name, { '手中所有牌变为{C:attention}' .. suit_zh .. '{}' },
-            { 'Turns every card in hand into {C:attention}' .. suit .. '{}' }),
+        loc_txt = loc(zh_name, en_name,
+            { '手中所有牌变为{C:attention}' .. suit_zh .. '{}', '{C:inactive}（需至少 1 张手牌）' },
+            { 'Turns every card in hand into {C:attention}' .. suit .. '{}', '{C:inactive}(needs at least 1 card)' }),
         can_use = function(self, card) return hand_card_count() > 0 end,
         use = function(self, card, area, copier)
             head_start(card)

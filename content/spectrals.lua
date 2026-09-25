@@ -180,8 +180,8 @@ SMODS.Consumable {
     key = 'daocheng_cycle', set = 'Spectral', atlas = 'blh_spectral', pos = { x = 0, y = 1 }, cost = 4, discovered = true,
     config = {},
     loc_txt = loc('道城·轮回', 'Daocheng: Samsara',
-        { '返还本回合所有已消耗的', '{C:attention}出牌次数{}与{C:attention}弃牌次数{}' },
-        { 'Refunds every {C:attention}Hand{} and {C:attention}Discard{}', 'spent this round' }),
+        { '返还本回合已消耗的{C:attention}出牌次数{}与{C:attention}弃牌次数{}', '{C:inactive}（本回合没消耗过时无法使用）' },
+        { 'Refunds the {C:attention}Hands{} and {C:attention}Discards{} spent this round', '{C:inactive}(unusable if you have not spent any this round)' }),
     can_use = function(self, card)
         if not (G.GAME and G.GAME.current_round and G.GAME.round_resets) then return false end
         return G.GAME.current_round.hands_left < G.GAME.round_resets.hands
@@ -205,8 +205,8 @@ SMODS.Consumable {
     key = 'yucheng_memory', set = 'Spectral', atlas = 'blh_spectral', pos = { x = 1, y = 1 }, cost = 4, discovered = true,
     config = {},
     loc_txt = loc('玉城·记忆', 'Yucheng: Memory',
-        { '恢复本局已使用的最后 {C:attention}3{} 张消耗品中的', '{C:attention}1{} 张（随机）' },
-        { 'Restores {C:attention}1{} random card from the last', '{C:attention}3{} consumables you used this run' }),
+        { '从本局已使用的最后 {C:attention}3{} 张消耗品中', '随机恢复 {C:attention}1{} 张', '{C:inactive}（需本局用过消耗品，且消耗品区有空位）' },
+        { 'Recovers {C:attention}1{} random consumable from the', 'last {C:attention}3{} you used this run', '{C:inactive}(needs a used consumable and a free consumable slot)' }),
     can_use = function(self, card)
         local used = G.GAME and G.GAME.blh_used_consumables
         return used ~= nil and #used > 0 and #G.consumeables.cards < G.consumeables.config.card_limit
@@ -231,8 +231,8 @@ SMODS.Consumable {
     key = 'wocheng_vortex', set = 'Spectral', atlas = 'blh_spectral', pos = { x = 2, y = 1 }, cost = 4, discovered = true,
     config = {},
     loc_txt = loc('涡城·漩涡', 'Wocheng: Vortex',
-        { '把手牌全部洗回牌堆', '然后重抽等量的牌' },
-        { 'Shuffles your whole hand back into the deck', 'and draws the same number of cards' }),
+        { '把手牌全部洗回牌堆', '然后重抽等量的牌', '{C:inactive}（需至少有 1 张手牌）' },
+        { 'Shuffles your whole hand back into the deck', 'then draws the same number of cards', '{C:inactive}(needs at least 1 card in hand)' }),
     can_use = function(self, card) return hand_card_count() > 0 end,
     use = function(self, card, area, copier)
         local n = hand_card_count()
@@ -263,8 +263,8 @@ SMODS.Consumable {
     key = 'goucheng_pact', set = 'Spectral', atlas = 'blh_spectral', pos = { x = 3, y = 1 }, cost = 4, discovered = true,
     config = { extra = { penalty = 0.5, reward = 2 } },
     loc_txt = loc('勾城·契约', 'Goucheng: Contract',
-        { '与本盲注签约：所需分数 {C:red}+#1#{}', '通关时获得 {C:money}×#2#{} 的{C:attention}道{}' },
-        { 'Sign a contract with this Blind: it needs {C:red}+#1#{} score', 'but defeating it grants {C:money}×#2#{} {C:attention}Dao{}' }),
+        { '与本盲注签约：所需分数 {C:red}+#1#{}', '击败该盲注时，获得的{C:attention}道{} {C:money}×#2#{}', '{C:inactive}（只能在小盲注 / 大盲注时使用，Boss 盲注不可用）' },
+        { 'Sign a contract with this Blind: it needs {C:red}+#1#{} score', 'defeating it grants {C:money}×#2#{} the usual {C:attention}Dao{}', '{C:inactive}(only usable on Small / Big Blinds, not on Boss Blinds)' }),
     loc_vars = function(self, iq)
         return { vars = { tostring(self.config.extra.penalty * 100) .. '%', self.config.extra.reward } }
     end,
@@ -294,8 +294,8 @@ SMODS.Consumable {
     key = 'suocheng_index', set = 'Spectral', atlas = 'blh_spectral', pos = { x = 4, y = 1 }, cost = 4, discovered = true,
     config = {},
     loc_txt = loc('索城·索引', 'Suocheng: Index',
-        { '把牌堆中与手中{C:attention}点数最高{}的牌同点数的牌', '全部加入手牌' },
-        { 'Adds every card of the {C:attention}highest rank{} in your hand', 'from the deck to your hand' }),
+        { '把牌堆中与手中{C:attention}点数最高{}的牌同点数的牌', '全部加入手牌', '{C:inactive}（需手牌有空位、牌堆里有同点数牌）' },
+        { 'Adds every card in your deck that shares the rank of', 'the {C:attention}highest-ranked{} card in your hand', '{C:inactive}(needs a free slot and a matching card in the deck)' }),
     can_use = function(self, card)
         if hand_card_count() == 0 or #G.hand.cards >= G.hand.config.card_limit then return false end
         local top

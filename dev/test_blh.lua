@@ -1092,4 +1092,78 @@ eq('地猴：随机弃掉 1 张手牌', STUB.discarded, 1)
 eq('地猴：弃牌不消耗弃牌次数', STUB.hook, true)
 eq('地猴：弃牌次数未被改动', G.GAME.current_round.discards_left, 3)
 
+print('== 塔罗描述完整度 ==')
+local tarots = {}
+for _, c in ipairs(reg.consumables) do if c.set == 'Tarot' then tarots[#tarots + 1] = c end end
+eq('塔罗数量', #tarots, 21)
+local tz = {}
+for _, c in ipairs(tarots) do tz[c.key] = c end
+
+local no_hint, no_select, too_short = 0, 0, 0
+for _, c in ipairs(tarots) do
+    local zh = loc_text(c, 'zh_CN') or ''
+    if not zh:find('{C:inactive}', 1, true) then no_hint = no_hint + 1 end
+    if c.config and c.config.max_highlighted and not zh:find('选中', 1, true) then no_select = no_select + 1 end
+    if #zh < 12 then too_short = too_short + 1 end
+end
+eq('每张塔罗都写了 {C:inactive} 使用条件/边界提示', no_hint, 0)
+eq('需要选牌的塔罗都写明「选中 N 张」', no_select, 0)
+eq('塔罗描述不是空壳', too_short, 0)
+
+-- loc_vars 声明的变量必须都在描述里出现（防止写了变量却没用上）
+local orphan = 0
+for _, c in ipairs(tarots) do
+    if type(c.loc_vars) == 'function' then
+        local ok, res = pcall(c.loc_vars, c, {})
+        local n = (ok and res and res.vars and #res.vars) or 0
+        local zh = loc_text(c, 'zh_CN') or ''
+        for i = 1, n do
+            if not zh:find('#' .. i .. '#', 1, true) then orphan = orphan + 1; break end
+        end
+    end
+end
+eq('塔罗 loc_vars 里的变量都在描述中使用', orphan, 0)
+
+-- 本次补齐的关键信息
+local function zh_of(k) return loc_text(tz[k], 'zh_CN') or '' end
+eq('镜像：写明需要手牌空位', zh_of('mirror'):find('空位', 1, true) ~= nil, true)
+eq('鼠：写明加到手牌满为止', zh_of('rat_search'):find('满为止', 1, true) ~= nil, true)
+eq('牛：写明点数上限为 A', zh_of('ox_run'):find('上限', 1, true) ~= nil, true)
+eq('蛇：写明筹码是永久加成', zh_of('snake_vote'):find('永久', 1, true) ~= nil, true)
+eq('鸡：写明会覆盖原有强化', zh_of('rooster_arms'):find('覆盖', 1, true) ~= nil, true)
+eq('龙与兔：写明并列时的选取顺序', zh_of('dragon_balance'):find('并列', 1, true) ~= nil
+   and zh_of('rabbit_escape'):find('并列', 1, true) ~= nil, true)
+eq('虎：写明需要恰好 2 张', zh_of('tiger_duel'):find('恰好 2 张', 1, true) ~= nil, true)
+eq('虎：同时给出每张与两张合计金额', #(tz.tiger_duel.loc_vars(tz.tiger_duel, {}).vars), 2)
+eq('四神兽：写明需要至少 1 张手牌', zh_of('qinglong_east'):find('至少 1 张', 1, true) ~= nil, true)
+
+-- 幻灵同样要求：使用条件/边界提示 + loc_vars 变量都被用上
+local sz = {}
+for _, c in ipairs(reg.consumables) do sz[c.key] = c end
+local no_hint_all, orphan_all = 0, 0
+for _, c in ipairs(reg.consumables) do
+    local zh = loc_text(c, 'zh_CN') or ''
+    if not zh:find('{C:inactive}', 1, true) then no_hint_all = no_hint_all + 1 end
+    if type(c.loc_vars) == 'function' then
+        local ok, res = pcall(c.loc_vars, c, {})
+        local n = (ok and res and res.vars and #res.vars) or 0
+        for i = 1, n do
+            if not zh:find('#' .. i .. '#', 1, true) then orphan_all = orphan_all + 1; break end
+        end
+    end
+end
+eq('每个消耗品（塔罗 + 幻灵）都有 {C:inactive} 使用条件提示', no_hint_all, 0)
+eq('每个消耗品的 loc_vars 变量都在描述中使用', orphan_all, 0)
+
+eq('勾城·契约：写明只能在非 Boss 盲注使用',
+   (loc_text(sz.goucheng_pact, 'zh_CN'):find('Boss 盲注不可用', 1, true) ~= nil), true)
+eq('勾城·契约：写明是击败该盲注时结算（原来误写「通关时」）',
+   (loc_text(sz.goucheng_pact, 'zh_CN'):find('击败该盲注时', 1, true) ~= nil), true)
+eq('道城·轮回：写明本回合没消耗过时不可用',
+   (loc_text(sz.daocheng_cycle, 'zh_CN'):find('没消耗过', 1, true) ~= nil), true)
+eq('玉城·记忆：写明需要消耗品区空位',
+   (loc_text(sz.yucheng_memory, 'zh_CN'):find('有空位', 1, true) ~= nil), true)
+eq('索城·索引：写明需要空位与同点数牌',
+   (loc_text(sz.suocheng_index, 'zh_CN'):find('同点数牌', 1, true) ~= nil), true)
+
 print(('ALL PASS (%d checks)'):format(passed))
