@@ -800,8 +800,12 @@ functions/misc_functions.lua:869: attempt to index local 'C1' (a nil value)
 | 620 | `obj:drawn_to_hand()` | 抽牌后 |
 | 689 / 697 | `obj:recalc_debuff` / `obj:debuff_card` | 单张牌的 debuff 判定 |
 
-**没有 `blind.calculate` 的分派点。** 官方 wiki 列了 `calculate(self, blind, context)`，
-但设备源码里找不到调用方（可能在未 dump 的 SMODS 核心里），因此凡是**关键效果**都改到上表里确有分派点的钩子上。
+**`blind.lua`（原版）里没有 `blind.calculate` 的分派点**；不过 SMODS 自己的
+`utils.lua` 里定义了 `function Blind:calculate(context)`（本地参考 beta-1814a:2342），
+并从「个体计分目标」里调用，所以 `calculate` 在 SMODS 下确实会触发。
+即便如此，本模组仍把关键效果放在上表中原版就会分派的钩子上：
+`modify_hand` 是原版 The Flint 用的计分修正入口，`press_play` 是原版 The Hook 用的出牌时机入口，
+比依赖 SMODS 内部实现更稳（26.829.0 的 `utils.lua` 未在设备 dump 中，无法逐行核对）。
 
 ### 26.2 修掉的问题
 
@@ -943,3 +947,74 @@ if context.end_of_round and not context.game_over and not context.blueprint
 - 第 3 回合若小丑栏有空位：应出现 1 张**负片**小丑，描述变「已积累 3 回合，已生成 1/3」。
 - 小丑栏满时：应弹出「没有空间！」，且不再显示误导性的「复制！」。
 - 同时确认其它 `end_of_round` 小丑（招灾 / 巧物 / 显灵 / 赝品 / 探囊 / 入梦 / 天行健 / 癫人）在真机上确实会触发。
+
+---
+
+## 29. 小丑 / 标签审计：静默失败与生效时机
+
+顺着 §28 的问题（"效果看不出在推进"）把 30 张小丑 + 16 张标签逐个对照实现，又找出 4 类真实问题。
+
+### 29.1 功能缺失（承诺了但根本没实现）
+
+| 对象 | 问题 | 修复 |
+|---|---|---|
+| **忘忧** | 描述写「你的牌不会被任何效果失效」，实现里**只有 ×0.8 惩罚**，免疫完全没写 | 补 `Card:set_debuff` 钩子：持有时把**牌**（`playing_card`）的失效强制为 false；小丑仍可被失效（描述同步说明） |
+
+### 29.2 生效时机错误：获得后立刻消耗、效果白费
+
+| 对象 | 问题 | 修复 |
+|---|---|---|
+| **牛·负力**（标签） | 跳过盲注拿到标签时立刻 `ease_hands_played(1)`，但那一刻 `new_round()` 还没跑，**下一个盲注开场时 `hands_left` 被整体重置** → 加了等于没加 | 改写 `G.GAME.round_bonus.next_hands`（`new_round` 先算 `round_resets.hands + round_bonus.next_hands` 再清零 bonus），文案改为「下一次出牌回合 +1 出牌次数」 |
+| **兔·脱身**（标签） | 同上，`ease_discard(2)` 被下一回合重置抹掉 | 改写 `G.GAME.round_bonus.discards`，文案同步 |
+| **白虎·调停**（标签） | 跳过盲注时「当前盲注」其实已经打完，当场 `blind:disable()` 会作用在**旧盲注**上；旧盲注 chips 已满足时还会把状态推成 `NEW_ROUND` | 改为挂起 `G.GAME.blh_break_blind`，由 `mod.calculate` 在下一个盲注的 `setting_blind` 时机解除（已验证 SMODS 会把 mod 作为「个体计分目标」收到**所有** `calculate_context`） |
+
+### 29.3 静默失败（做了但没有任何反馈）
+
+| 对象 | 问题 | 修复 |
+|---|---|---|
+| **探囊** | 回合结束就扣 $3，而取牌发生在下一回合首手；若**牌堆没有强化牌**或**手牌已满**，钱白扣、什么也没有 | 改为**取到牌才扣钱**；牌堆无强化牌 → `blh_msg_nopick`，钱不够 → `blh_msg_nomoney`，手牌满 → `k_no_space_ex`（并保留挂起，下一回合再试） |
+| **巧物** | 钱不够 / 消耗品区满时静默无反应 | 分别给 `blh_msg_nomoney` / `k_no_space_ex` |
+| **显灵** | 有蜡封但消耗品区满时静默无反应 | 给 `k_no_space_ex` |
+| **挪移** | 掷骰成功但手牌已满时，牌留在弃牌堆却仍显示「再来一次」 | 改成掷骰成功后再查空位，满则 `k_no_space_ex` |
+| **猴·取物 / 青龙·之首**（标签） | 用 `SMODS.Jokers` 建池，而该表在 26.829.0 **不存在**（同 §23 的主题池问题）→ 池为空、标签白消耗 | 改用 `our_joker_keys()`：从 `G.P_JOKER_RARITY_POOLS` 取本模组小丑（空则回退扫 `G.P_CENTERS`） |
+
+### 29.4 文案与实现不符
+
+| 对象 | 原文案 | 实际 | 处理 |
+|---|---|---|---|
+| **双生花** | 「把手中**最强**的强化复制…」 | 取的是手中**第一张**强化牌（没有强度比较） | 文案改为「手中一张强化牌」 |
+| **嫁祸** | 「让本盲注的限制**改为**失效 1 张小丑牌」 | 实际是**解除整条盲注限制** + 随机 1 张小丑失效（比描述更强） | 文案改为「解除本盲注的限制，代价是随机 1 张小丑失效」；`victim.debuff = true` 改用 `victim:set_debuff(true)` |
+| **离析** | 「每次出牌**后**」 | 实际在 `context.before`（出牌**时**、计分前） | 文案改为「每次出牌时」 |
+| **替罪** | 「每弃掉 1 张牌获得 $1」 | 被失效的牌不计 | 补 `{C:inactive}（被失效的牌不计）` |
+| **激发** | `(1/4 → 1/3）` 半全角括号混用 | — | 统一为全角 |
+
+### 29.5 顺带修正：跃迁的上限是「每手牌」不是「每回合」
+
+**跃迁**在 `context.before`（每次出牌）清零计数，等于「每手牌最多 2 次」，
+还能靠消耗品续手无限滚；描述写的是「每回合最多 2 次」。
+改为按回合 id 计（`round_id()`，与 `once()` 同一套）：同回合内出牌不再重置额度。
+
+### 29.6 复核通过（未改）
+
+- `context.*` 白名单核对：`joker_main` / `before` / `after` / `discard`+`other_card` / `individual` /
+  `repetition` / `end_of_round` / `game_over` / `first_hand_drawn` / `setting_blind` / `using_consumeable` /
+  `fix_probability`+`numerator`+`denominator` 在设备源码或 SMODS 里都有分派点 ✅
+  （`using_consumeable`：`button_callbacks.lua:2320`；`fix_probability`：SMODS `utils.lua:3039`）
+- `once(card)` 的每回合标识：`G.GAME.round` 在按下盲注时 `ease_round(1)` 自增（`button_callbacks.lua:2633`）✅
+- 爆燃 / 魂迁 / 替罪 / 挪移 / 因果 / 天行健 的弃牌上下文与"被失效不计"逻辑 ✅
+
+### 29.7 新增自动回归（279 项）
+
+- 忘忧：无忘忧时牌会失效、持有忘忧时牌不失效、小丑仍可失效
+- 跃迁：同回合第 3 张消耗品不再给手；同回合出牌不重置额度；下一回合额度恢复
+- 探囊：回合结束**不扣钱**只挂起；无强化牌不扣钱并清挂起；成功取牌才扣 $3；手牌满不扣钱且保留挂起
+- 巧物：槽位满 / 钱不够时返回非空提示且不扣钱；显灵：槽位满时返回提示
+- 标签：牛/兔 写 `round_bonus`；猴·取物 能从小丑池取到；白虎当场不解除旧盲注、挂起标记在下一次 `setting_blind` 被消费
+- 旧断言同步更新（探囊由「回合结束扣钱」改为「取到牌才扣钱」）；桩里的 `Tag:yep` 改为**执行回调**（原版语义）
+
+### 29.8 仍需真机确认
+
+- 跳过盲注拿到「牛·负力 / 兔·脱身」后，下一个盲注开场时出牌/弃牌次数确实多 1 / 多 2。
+- 「白虎·调停」应在下一个盲注**进场后**才解除限制，且不影响当前界面状态。
+- 「探囊」在牌堆没有强化牌时不再扣钱，并提示「牌堆没有强化牌」。
+- 「忘忧」在场时，盲注（如方片失效）不再让方片失效。

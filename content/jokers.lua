@@ -131,8 +131,8 @@ SMODS.Joker {
     key = 'li_xi', discovered = true, atlas = 'blh_joker', pos = { x = 4, y = 0 }, rarity = 1, cost = 6,
     config = { extra = { odds = 4, dollars = 2 } },
     loc_txt = loc('离析-赵海博', 'Disintegration - Zhao Haibo',
-        { '每次出牌后 {C:green}#1#/#2#{} 概率', '摧毁一张随机手牌并获得 {C:money}$#3#{}' },
-        { '{C:green}#1# in #2#{} chance after each hand', 'to destroy a random card in hand and gain {C:money}$#3#{}' }),
+        { '每次出牌时 {C:green}#1#/#2#{} 概率', '摧毁一张随机手牌并获得 {C:money}$#3#{}' },
+        { '{C:green}#1# in #2#{} chance when you play a hand', 'to destroy a random card in hand and gain {C:money}$#3#{}' }),
     loc_vars = function(self, iq, card)
         local n, d = SMODS.get_probability_vars(card, 1, card.ability.extra.odds, 'blh_lixi')
         return { vars = { n, d, card.ability.extra.dollars } }
@@ -234,7 +234,13 @@ SMODS.Joker {
     calculate = function(self, card, context)
         if context.end_of_round and not context.game_over and not context.blueprint
             and not context.individual and not context.repetition then
-            if G.GAME.dollars >= card.ability.extra.cost and #G.consumeables.cards < G.consumeables.config.card_limit then
+            if G.GAME.dollars < card.ability.extra.cost then
+                return { message = localize('blh_msg_nomoney'), colour = G.C.MONEY }
+            end
+            if #G.consumeables.cards >= G.consumeables.config.card_limit then
+                return { message = localize('k_no_space_ex'), colour = G.C.RED }
+            end
+            if true then
                 ease_dollars(-card.ability.extra.cost)
                 G.E_MANAGER:add_event(Event({ trigger = 'after', delay = 0.2, func = function()
                     if #G.consumeables.cards < G.consumeables.config.card_limit then
@@ -275,6 +281,8 @@ SMODS.Joker {
                     return true
                 end }))
                 return { message = localize('blh_msg_spectral'), colour = G.C.SECONDARY_SET.Spectral }
+            elseif sealed then
+                return { message = localize('k_no_space_ex'), colour = G.C.RED }
             end
         end
     end,
@@ -359,30 +367,41 @@ SMODS.Joker {
     calculate = function(self, card, context)
         if context.end_of_round and not context.game_over and not context.blueprint
             and not context.individual and not context.repetition then
-            if G.GAME.dollars < card.ability.extra.cost then return end
-            ease_dollars(-card.ability.extra.cost)
-            card.ability.extra.pending = true
-            return { message = localize('blh_msg_card'), colour = G.C.CHIPS }
+            -- 只挂起、不扣钱：钱在真正取到牌的那一刻才扣，
+            -- 否则"牌堆没有强化牌 / 手牌已满"时会白花 $3
+            if G.GAME.dollars >= card.ability.extra.cost then
+                card.ability.extra.pending = true
+            end
         end
         -- 下一回合首手抽完后取牌（当下时刻手牌区已就绪，不会再被回合重置清掉）
         if context.first_hand_drawn and not context.blueprint and card.ability.extra.pending then
+            if #G.hand.cards >= G.hand.config.card_limit then
+                -- 保留 pending，下一回合首手再试
+                return { message = localize('k_no_space_ex'), colour = G.C.RED }
+            end
+            local pool = {}
+            for _, c in ipairs(G.deck.cards) do
+                if c.ability and c.ability.name ~= 'Default' then pool[#pool + 1] = c end
+            end
+            if #pool == 0 then
+                card.ability.extra.pending = nil
+                return { message = localize('blh_msg_nopick'), colour = G.C.RED }
+            end
+            if G.GAME.dollars < card.ability.extra.cost then
+                card.ability.extra.pending = nil
+                return { message = localize('blh_msg_nomoney'), colour = G.C.MONEY }
+            end
             card.ability.extra.pending = nil
+            ease_dollars(-card.ability.extra.cost)
+            local pick = pseudorandom_element(pool, pseudoseed('blh_tannang' .. tostring(G.GAME.round or 0)))
             G.E_MANAGER:add_event(Event({ trigger = 'after', delay = 0.2, func = function()
-                if #G.hand.cards < G.hand.config.card_limit then
-                    local pool = {}
-                    for _, c in ipairs(G.deck.cards) do
-                        if c.ability and c.ability.name ~= 'Default' then pool[#pool + 1] = c end
-                    end
-                    if #pool > 0 then
-                        local pick = pseudorandom_element(pool, pseudoseed('blh_tannang' .. tostring(G.GAME.round or 0)))
-                        G.deck:remove_card(pick)
-                        G.hand:emplace(pick)
-                        if G.GAME.blind then G.GAME.blind:debuff_card(pick) end
-                        G.hand:sort()
-                    end
-                end
+                G.deck:remove_card(pick)
+                G.hand:emplace(pick)
+                if G.GAME.blind then G.GAME.blind:debuff_card(pick) end
+                G.hand:sort()
                 return true
             end }))
+            return { message = localize('blh_msg_card'), colour = G.C.CHIPS }
         end
     end,
 }
@@ -416,8 +435,8 @@ SMODS.Joker {
     key = 'shuang_sheng_hua', discovered = true, atlas = 'blh_joker', pos = { x = 2, y = 2 }, rarity = 2, cost = 7,
     config = { extra = { odds = 2 } },
     loc_txt = loc('双生花-钱多多', 'Twin Blossom - Qian Duoduo',
-        { '每次出牌 {C:green}#1#/#2#{} 概率', '把手中最强的强化复制给同点数的其他手牌' },
-        { '{C:green}#1# in #2#{} chance each hand to copy', 'the strongest enhancement to same-rank cards in hand' }),
+        { '每次出牌 {C:green}#1#/#2#{} 概率', '把手中一张强化牌的强化复制给同点数的其他手牌' },
+        { '{C:green}#1# in #2#{} chance each hand to copy', 'an Enhancement from hand to same-rank cards' }),
     loc_vars = function(self, iq, card)
         local n, d = SMODS.get_probability_vars(card, 1, card.ability.extra.odds, 'blh_shuang')
         return { vars = { n, d } }
@@ -510,7 +529,7 @@ SMODS.Joker {
     key = 'ji_fa', discovered = true, atlas = 'blh_joker', pos = { x = 5, y = 2 }, rarity = 1, cost = 5,
     config = { extra = { bonus = 1 } },
     loc_txt = loc('激发-林檎', 'Awakening - Lin Qin',
-        { '所有概率效果的分母 {C:green}-#1#{}', '{C:inactive}(1/4 → 1/3）' },
+        { '所有概率效果的分母 {C:green}-#1#{}', '{C:inactive}（1/4 → 1/3）' },
         { 'All probability rolls get {C:green}-#1#{} from the denominator', '{C:inactive}(1/4 → 1/3)' }),
     loc_vars = function(self, iq, card) return { vars = { card.ability.extra.bonus } } end,
     calculate = function(self, card, context)
@@ -596,8 +615,8 @@ SMODS.Joker {
     key = 'ti_zui', discovered = true, atlas = 'blh_joker', pos = { x = 3, y = 3 }, rarity = 1, cost = 5,
     config = { extra = { dollars = 1 } },
     loc_txt = loc('替罪-陈俊南', 'Scapegoat - Chen Junnan',
-        { '每弃掉 1 张牌获得 {C:money}$#1#{}' },
-        { 'Earn {C:money}$#1#{} for each card discarded' }),
+        { '每弃掉 1 张牌获得 {C:money}$#1#{}', '{C:inactive}（被失效的牌不计）' },
+        { 'Earn {C:money}$#1#{} for each card discarded', '{C:inactive}(debuffed cards do not count)' }),
     loc_vars = function(self, iq, card) return { vars = { card.ability.extra.dollars } } end,
     calculate = function(self, card, context)
         if context.discard and not context.blueprint and not context.other_card.debuff then
@@ -612,8 +631,8 @@ SMODS.Joker {
     key = 'jia_huo', discovered = true, atlas = 'blh_joker', pos = { x = 4, y = 3 }, rarity = 1, cost = 5,
     config = { extra = { odds = 3 } },
     loc_txt = loc('嫁祸-陆潇潇', 'Shift Blame - Lu Xiaoxiao',
-        { '计分时 {C:green}#1#/#2#{} 概率', '让本盲注的限制改为失效 1 张小丑牌' },
-        { '{C:green}#1# in #2#{} chance on scoring to make', 'this Blind debuff a random Joker instead of your cards' }),
+        { '计分时 {C:green}#1#/#2#{} 概率', '解除本盲注的限制，代价是随机 1 张小丑{C:attention}失效{}' },
+        { '{C:green}#1# in #2#{} chance on scoring to remove', 'this Blind restriction, debuffing a random Joker instead' }),
     loc_vars = function(self, iq, card)
         local n, d = SMODS.get_probability_vars(card, 1, card.ability.extra.odds, 'blh_jiahuo')
         return { vars = { n, d } }
@@ -625,7 +644,7 @@ SMODS.Joker {
                 local pool = {}
                 for _, j in ipairs(G.jokers.cards) do if j ~= card and not j.ability.eternal then pool[#pool + 1] = j end end
                 local victim = pseudorandom_element(pool, pseudoseed('blh_jiahuo' .. tostring(G.GAME.round or 0)))
-                if victim then victim.debuff = true end
+                if victim then victim:set_debuff(true) end
                 return { message = localize('k_nope_ex'), colour = G.C.RED }
             end
         end
@@ -637,8 +656,8 @@ SMODS.Joker {
     key = 'wang_you', discovered = true, atlas = 'blh_joker', pos = { x = 5, y = 3 }, rarity = 1, cost = 5,
     config = { extra = { penalty = 0.8 } },
     loc_txt = loc('忘忧-罗十一', 'Forget Sorrow - Luo Shiyi',
-        { '你的牌不会被任何效果 {C:attention}失效{}，', '但所有计分 {X:mult,C:white}×#1#{}倍率' },
-        { 'Your cards are never debuffed,', 'but all scoring is {X:mult,C:white}×#1#{} Mult' }),
+        { '你的{C:attention}牌{}不会被任何效果失效', '{C:inactive}（小丑仍会被失效）{}但所有计分 {X:mult,C:white}×#1#{}倍率' },
+        { 'Your {C:attention}playing cards{} are never debuffed', '{C:inactive}(Jokers can still be){} but all scoring is {X:mult,C:white}×#1#{} Mult' }),
     loc_vars = function(self, iq, card) return { vars = { card.ability.extra.penalty } } end,
     calculate = function(self, card, context)
         if context.joker_main then
@@ -646,6 +665,24 @@ SMODS.Joker {
         end
     end,
 }
+
+-- 忘忧的"免疫"实现：原版把失效状态写进 Card:set_debuff，
+-- 所以在这里拦截最稳（盲注 debuff_card / 贴纸 / 版本都经过它）。
+-- 只作用于"牌"（playing_card）——描述说的是"你的牌"，小丑仍可被失效。
+local set_debuff_ref = Card.set_debuff
+function Card:set_debuff(debuff)
+    if debuff and self.playing_card and G.jokers then
+        for _, j in ipairs(G.jokers.cards) do
+            local center = j.config and j.config.center
+            if center and (center.key == 'j_blh_wang_you' or center.key == 'blh_wang_you') then
+                debuff = false
+                break
+            end
+        end
+    end
+    if set_debuff_ref then return set_debuff_ref(self, debuff) end
+    self.debuff = debuff
+end
 
 -- 不灭：每局一次免死（由 economy 的 saved 机制触发）
 SMODS.Joker {
@@ -705,13 +742,19 @@ SMODS.Joker {
     calculate = function(self, card, context)
         if context.using_consumeable and not context.blueprint then
             local extra = card.ability.extra
+            -- 上限按"回合"计：原来在 context.before 清零 = 每手牌都重置，
+            -- 与描述「每回合最多 2 次」不符（还能靠消耗品无限续手）
+            local id = round_id()
+            if extra.rnd ~= id then
+                extra.rnd = id
+                extra.count = 0
+            end
             if (extra.count or 0) < extra.cap then
                 extra.count = (extra.count or 0) + 1
                 ease_hands_played(1)
                 return { message = localize('blh_msg_hand'), colour = G.C.BLUE }
             end
         end
-        if context.before and not context.blueprint then card.ability.extra.count = 0 end
     end,
 }
 
@@ -777,6 +820,9 @@ SMODS.Joker {
     calculate = function(self, card, context)
         if context.discard and not context.blueprint and not context.other_card.debuff then
             if SMODS.pseudorandom_probability(card, 'blh_nuoyi' .. tostring(context.other_card.sort_id or 0), 1, card.ability.extra.odds) then
+                if not (G.hand and #G.hand.cards < G.hand.config.card_limit) then
+                    return { message = localize('k_no_space_ex'), colour = G.C.RED }
+                end
                 local target = context.other_card
                 G.E_MANAGER:add_event(Event({ trigger = 'after', delay = 0.15, func = function()
                     if G.hand and #G.hand.cards < G.hand.config.card_limit and target.area == G.discard then

@@ -23,6 +23,8 @@ return {
             blh_msg_dollars = '+$',
             blh_msg_hand = '+1 出牌次数',
             blh_msg_immune = '免疫',
+            blh_msg_nopick = '牌堆没有强化牌',
+            blh_msg_nomoney = '金钱不足',
             blh_dao_name = '道',
             blh_gamble_ex = '赌命！',
             blh_bumie_ex = '不灭！',

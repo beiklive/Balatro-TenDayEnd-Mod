@@ -23,6 +23,8 @@ return {
             blh_msg_dollars = '+$',
             blh_msg_hand = '+1 Hand',
             blh_msg_immune = 'Immune',
+            blh_msg_nopick = 'No Enhanced card in deck',
+            blh_msg_nomoney = 'Not enough money',
             blh_dao_name = 'Dao',
             blh_gamble_ex = 'GAMBLED!',
             blh_bumie_ex = 'IMMORTAL!',

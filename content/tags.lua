@@ -16,6 +16,24 @@ local function add_joker(key, seed)
     G.jokers:emplace(card)
 end
 
+-- 本模组的小丑 key 列表。
+-- 注意：SMODS.Jokers 在 26.829.0 并不存在（只有 SMODS.Tags/Seals/Stickers/Atlases），
+-- 用它建池会得到空表 → 标签"获得后立刻消耗"却什么也没给。
+local function our_joker_keys()
+    local out = {}
+    for _, pool in ipairs(G.P_JOKER_RARITY_POOLS or {}) do
+        for _, j in ipairs(pool) do
+            if j.mod == SMODS.current_mod then out[#out + 1] = j.key end
+        end
+    end
+    if #out == 0 then
+        for _, c in pairs(G.P_CENTERS or {}) do
+            if c.mod == SMODS.current_mod and c.set == 'Joker' then out[#out + 1] = c.key end
+        end
+    end
+    return out
+end
+
 local function add_consumable(set, key, seed)
     if not (G.consumeables and #G.consumeables.cards < G.consumeables.config.card_limit) then return end
     local card = create_card(set, G.consumeables, nil, nil, nil, nil, key, seed or 'blh_tag')
@@ -43,11 +61,14 @@ SMODS.Tag {
 SMODS.Tag {
     key = 'ox_power', atlas = 'blh_tag', pos = { x = 1, y = 0 },
     config = { type = 'immediate' },
-    loc_txt = loc('牛·负力', 'Ox: Endurance', { '本回合 {C:attention}+1{} 出牌次数' }, { 'This round: {C:attention}+1{} Hand' }),
+    loc_txt = loc('牛·负力', 'Ox: Endurance', { '下一次出牌回合 {C:attention}+1{} 出牌次数' }, { 'Next played round: {C:attention}+1{} Hand' }),
     apply = function(self, tag, context)
         if context.type ~= 'immediate' then return end
         tag:yep('+', G.C.BLUE, function()
-            ease_hands_played(1)
+            -- 必须写进 round_bonus：跳过盲注时 new_round() 还没执行，
+            -- 直接 ease_hands_played 会被下一次 new_round 的重置抹掉（标签白消耗）
+            G.GAME.round_bonus = G.GAME.round_bonus or {}
+            G.GAME.round_bonus.next_hands = (G.GAME.round_bonus.next_hands or 0) + 1
             return true
         end)
         tag.triggered = true
@@ -75,11 +96,13 @@ SMODS.Tag {
 SMODS.Tag {
     key = 'rabbit_escape', atlas = 'blh_tag', pos = { x = 3, y = 0 },
     config = { type = 'immediate' },
-    loc_txt = loc('兔·脱身', 'Rabbit: Escape', { '本回合 {C:attention}+2{} 弃牌次数' }, { 'This round: {C:attention}+2{} Discards' }),
+    loc_txt = loc('兔·脱身', 'Rabbit: Escape', { '下一次出牌回合 {C:attention}+2{} 弃牌次数' }, { 'Next played round: {C:attention}+2{} Discards' }),
     apply = function(self, tag, context)
         if context.type ~= 'immediate' then return end
         tag:yep('+', G.C.BLUE, function()
-            ease_discard(2)
+            -- 同牛·负力：走 round_bonus 才能撑到下一个回合
+            G.GAME.round_bonus = G.GAME.round_bonus or {}
+            G.GAME.round_bonus.discards = (G.GAME.round_bonus.discards or 0) + 2
             return true
         end)
         tag.triggered = true
@@ -167,10 +190,7 @@ SMODS.Tag {
     apply = function(self, tag, context)
         if context.type ~= 'immediate' then return end
         tag:yep('+', G.C.PURPLE, function() return true end)
-        local pool = {}
-        for _, j in pairs(SMODS.Jokers or {}) do
-            if j.mod == SMODS.current_mod then pool[#pool + 1] = j.key end
-        end
+        local pool = our_joker_keys()
         if #pool > 0 then
             add_joker(pseudorandom_element(pool, pseudoseed('blh_monkey_tag')), 'blh_mtag')
         end
@@ -250,11 +270,18 @@ SMODS.Tag {
 SMODS.Tag {
     key = 'baihu_mediate', atlas = 'blh_tag', pos = { x = 5, y = 1 },
     config = { type = 'immediate' },
-    loc_txt = loc('白虎·调停', 'Baihu: Mediation', { '立即解除当前盲注的限制' }, { 'Immediately removes the current Blind restriction' }),
+    loc_txt = loc('白虎·调停', 'Baihu: Mediation',
+        { '下一个盲注的限制被{C:attention}解除{}', '{C:inactive}（该盲注进场时生效）' },
+        { 'Removes the restriction of the {C:attention}next Blind{}', '{C:inactive}(takes effect when it starts)' }),
     apply = function(self, tag, context)
         if context.type ~= 'immediate' then return end
-        tag:yep('+', G.C.RED, function() return true end)
-        if G.GAME.blind and G.GAME.blind.boss then G.GAME.blind:disable() end
+        tag:yep('+', G.C.RED, function()
+            -- 跳过盲注时"当前盲注"已经打完了：直接 disable() 会作用在旧盲注上，
+            -- 而且旧盲注 chips 已满足时还会把状态推成 NEW_ROUND。
+            -- 改为挂起，等下一个盲注 set_blind 之后（context.setting_blind）再解除。
+            G.GAME.blh_break_blind = true
+            return true
+        end)
         tag.triggered = true
         return true
     end,
@@ -286,10 +313,7 @@ SMODS.Tag {
     apply = function(self, tag, context)
         if context.type ~= 'immediate' then return end
         tag:yep('+', G.C.PURPLE, function() return true end)
-        local pool = {}
-        for _, j in pairs(SMODS.Jokers or {}) do
-            if j.mod == SMODS.current_mod then pool[#pool + 1] = j.key end
-        end
+        local pool = our_joker_keys()
         if #pool > 0 and G.jokers and #G.jokers.cards < G.jokers.config.card_limit then
             local key = pseudorandom_element(pool, pseudoseed('blh_qinglong_tag'))
             local card = create_card('Joker', G.jokers, nil, nil, nil, nil, key, 'blh_qtag')

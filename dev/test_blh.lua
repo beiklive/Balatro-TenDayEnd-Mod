@@ -144,6 +144,7 @@ end
 function get_next_tag_key() for k in pairs(G.P_TAGS) do return k end end
 
 Card = {}
+function Card:set_debuff(d) self.debuff = d end
 function Card:calculate_joker(ctx) return nil end
 function Card:use_consumeable() end
 
@@ -589,9 +590,11 @@ G.deck.cards = { enh }
 local tan_card = { ability = { extra = { cost = 3 } }, juice_up = noop }
 local h0, d0 = #G.hand.cards, #G.deck.cards
 tan.calculate(tan, tan_card, { end_of_round = true, main_eval = true, game_over = false })
-eq('探囊：回合结束只扣钱', G.GAME.dollars, 7)
+-- 改为"取到牌才扣钱"（见 §29）：回合结束只挂起
+eq('探囊：回合结束只挂起、不扣钱', G.GAME.dollars, 10)
 eq('探囊：回合结束不动牌区', #G.hand.cards + #G.deck.cards, h0 + d0)
 tan.calculate(tan, tan_card, { first_hand_drawn = true })
+eq('探囊：取到牌时才扣 $3', G.GAME.dollars, 7)
 eq('探囊：首手后牌到手（牌区总数不变）', #G.hand.cards + #G.deck.cards, h0 + d0)
 eq('探囊：手牌 +1', #G.hand.cards, h0 + 1)
 eq('探囊：拿到的是那张强化牌', G.hand.cards[#G.hand.cards], enh)
@@ -1215,5 +1218,151 @@ eq('玉城·记忆：写明需要消耗品区空位',
    (loc_text(sz.yucheng_memory, 'zh_CN'):find('有空位', 1, true) ~= nil), true)
 eq('索城·索引：写明需要空位与同点数牌',
    (loc_text(sz.suocheng_index, 'zh_CN'):find('同点数牌', 1, true) ~= nil), true)
+
+print('== 小丑/标签：静默失败与时机 ==')
+local jk = {}
+for _, j in ipairs(reg.jokers) do jk[j.key] = j end
+local tk = {}
+for _, t in ipairs(reg.tags) do tk[t.key] = t end
+
+local function audit_game()
+    return { challenge = 'blh_zhongyan', blh_dao = 0, round = 1, dollars = 10, modifiers = {}, banned_keys = {},
+             round_resets = { hands = 4, discards = 3, ante = 5 },
+             current_round = { hands_left = 4, discards_left = 3 },
+             round_bonus = { next_hands = 0, discards = 0 } }
+end
+G.GAME = audit_game()
+
+-- ① 忘忧：免疫失效（原来只有 ×0.8 惩罚，免疫完全没实现）
+local pc = { playing_card = true }
+Card.set_debuff(pc, true)
+eq('无忘忧时牌会被失效', pc.debuff, true)
+G.jokers = { cards = { { config = { center = { key = 'j_blh_wang_you' } } } } }
+local pc2 = { playing_card = true }
+Card.set_debuff(pc2, true)
+eq('持忘忧时牌不会被失效', pc2.debuff, false)
+local joker_card = { config = { center = { key = 'j_other' } } }
+Card.set_debuff(joker_card, true)
+eq('忘忧不影响小丑被失效', joker_card.debuff, true)
+
+-- ② 跃迁：上限按回合计（原来在 context.before 清零 = 每手牌重置）
+local yq_card = { ability = { extra = { cap = 2, count = 0 } } }
+G.GAME.round = 3
+local function use_consumeable()
+    return yq.jk and nil
+end
+local yq = jk.yue_qian
+G.GAME.current_round.hands_left = 4
+yq.calculate(yq, yq_card, { using_consumeable = true })
+eq('跃迁：第 1 张消耗品 +1 手', G.GAME.current_round.hands_left, 5)
+yq.calculate(yq, yq_card, { using_consumeable = true })
+eq('跃迁：第 2 张消耗品 +1 手', G.GAME.current_round.hands_left, 6)
+yq.calculate(yq, yq_card, { using_consumeable = true })
+eq('跃迁：同回合第 3 张不再给（上限 2）', G.GAME.current_round.hands_left, 6)
+-- 同一回合内出牌不再重置上限
+yq.calculate(yq, yq_card, { before = true })
+yq.calculate(yq, yq_card, { using_consumeable = true })
+eq('跃迁：出牌不重置每回合上限', G.GAME.current_round.hands_left, 6)
+-- 进入下一回合后恢复额度
+G.GAME.round = 4
+yq.calculate(yq, yq_card, { using_consumeable = true })
+eq('跃迁：下一回合额度恢复', G.GAME.current_round.hands_left, 7)
+
+-- ③ 探囊：不在回合结束时扣钱，取到牌才扣
+local tn = jk.tan_nang
+local tn_card = { ability = { extra = { cost = 3 } } }
+G.GAME = audit_game(); G.GAME.round = 3
+G.GAME.dollars = 10
+G.hand.cards = { { base = { id = 5 } } }
+G.hand.config.card_limit = 8
+G.deck.cards = {}
+tn.calculate(tn, tn_card, { end_of_round = true, game_over = false })
+eq('探囊：回合结束只挂起不扣钱', G.GAME.dollars, 10)
+eq('探囊：挂起标记已置位', tn_card.ability.extra.pending, true)
+tn.calculate(tn, tn_card, { first_hand_drawn = true })
+eq('探囊：牌堆没有强化牌时不扣钱', G.GAME.dollars, 10)
+eq('探囊：无牌可取时清除挂起', tn_card.ability.extra.pending, nil)
+-- 有强化牌时才扣钱并拿到牌
+G.GAME.dollars = 10
+G.deck.cards = { { ability = { name = 'Bonus Card' } } }
+tn_card.ability.extra.pending = true
+tn.calculate(tn, tn_card, { first_hand_drawn = true })
+eq('探囊：成功取牌才扣 $3', G.GAME.dollars, 7)
+eq('探囊：牌进入手牌', #G.hand.cards, 2)
+-- 手牌满时保留挂起、不扣钱
+G.GAME.dollars = 10
+G.hand.cards = { {}, {}, {} }
+G.hand.config.card_limit = 3
+tn_card.ability.extra.pending = true
+tn.calculate(tn, tn_card, { first_hand_drawn = true })
+eq('探囊：手牌满时不扣钱', G.GAME.dollars, 10)
+eq('探囊：手牌满时保留挂起等下一回合', tn_card.ability.extra.pending, true)
+
+-- ④ 巧物：没空间 / 没钱要有反馈
+local qw = jk.qiao_wu
+local qw_card = { ability = { extra = { cost = 3 } } }
+G.GAME = audit_game(); G.GAME.dollars = 10
+G.consumeables = { cards = {}, config = { card_limit = 0 }, emplace = function(self, c) table.insert(self.cards, c) end }
+local r1 = qw.calculate(qw, qw_card, { end_of_round = true, game_over = false })
+eq('巧物：消耗品区满时给出提示', type(r1) == 'table' and r1.message ~= nil, true)
+eq('巧物：槽位满时不扣钱', G.GAME.dollars, 10)
+G.consumeables.config.card_limit = 2
+G.GAME.dollars = 1
+local r2 = qw.calculate(qw, qw_card, { end_of_round = true, game_over = false })
+eq('巧物：钱不够时给出提示', type(r2) == 'table' and r2.message ~= nil, true)
+eq('巧物：钱不够时不扣钱', G.GAME.dollars, 1)
+
+-- ⑤ 显灵：有蜡封但槽位满要有反馈
+local xl = jk.xian_ling
+local xl_card = { ability = { extra = {} } }
+G.GAME = audit_game()
+G.hand.cards = { { seal = 'blh_yu' } }
+G.consumeables = { cards = {}, config = { card_limit = 0 }, emplace = function(self, c) table.insert(self.cards, c) end }
+local r3 = xl.calculate(xl, xl_card, { end_of_round = true, game_over = false })
+eq('显灵：槽位满时给出提示', type(r3) == 'table' and r3.message ~= nil, true)
+
+-- ⑥ 标签：牛·负力 / 兔·脱身 写进 round_bonus（否则被下一次 new_round 抹掉）
+-- 原版 Tag:yep(msg, colour, func) 会执行 func；桩必须同样执行，否则测不到效果
+local function fake_tag(cfg)
+    local t = { config = cfg or {}, triggered = false }
+    t.yep = function(self, ...)
+        for i = 1, select('#', ...) do
+            local v = select(i, ...)
+            if type(v) == 'function' then v() end
+        end
+    end
+    return t
+end
+G.GAME = audit_game()
+local t_ox = fake_tag(tk.ox_power.config)
+tk.ox_power.apply(tk.ox_power, t_ox, { type = 'immediate' })
+eq('牛·负力：加成写进 round_bonus.next_hands', G.GAME.round_bonus.next_hands, 1)
+tk.ox_power.apply(tk.ox_power, t_ox, { type = 'immediate' })
+eq('牛·负力：多次获得可叠加', G.GAME.round_bonus.next_hands, 2)
+local t_rab = fake_tag(tk.rabbit_escape.config)
+tk.rabbit_escape.apply(tk.rabbit_escape, t_rab, { type = 'immediate' })
+eq('兔·脱身：加成写进 round_bonus.discards', G.GAME.round_bonus.discards, 2)
+
+-- ⑦ 标签：猴·取物 / 青龙·之首 的池不能再依赖 SMODS.Jokers（26.829.0 没这个表）
+local monkey_pool_ok = false
+G.GAME = audit_game()
+G.jokers = { cards = {}, config = { card_limit = 5 }, emplace = function(self, c) table.insert(self.cards, c) end }
+G.P_JOKER_RARITY_POOLS = { { { key = 'j_blh_test', mod = SMODS.current_mod } }, {}, {}, {} }
+local added = {}
+local orig_add_joker = add_joker
+tk.monkey_take.apply(tk.monkey_take, fake_tag(tk.monkey_take.config), { type = 'immediate' })
+eq('猴·取物：能从小丑池里取到本模组小丑', #G.jokers.cards, 1)
+
+-- ⑧ 标签：白虎·调停 挂起到下一个盲注（不再当场 disable 旧盲注）
+G.GAME = audit_game()
+G.GAME.blind = { boss = true, disabled = false, disable = function(self) self.disabled = true end }
+local t_bai = fake_tag(tk.baihu_mediate.config)
+tk.baihu_mediate.apply(tk.baihu_mediate, t_bai, { type = 'immediate' })
+eq('白虎：当场不解除旧盲注', G.GAME.blind.disabled, false)
+eq('白虎：挂起标记已置位', G.GAME.blh_break_blind, true)
+-- 下一个盲注进场时由 mod.calculate 消费
+SMODS.current_mod.calculate(SMODS.current_mod, { setting_blind = true })
+eq('白虎：下一个盲注进场时被解除', G.GAME.blind.disabled, true)
+eq('白虎：标记已消费', G.GAME.blh_break_blind, nil)
 
 print(('ALL PASS (%d checks)'):format(passed))

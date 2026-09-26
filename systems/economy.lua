@@ -226,8 +226,19 @@ function BLH.try_revive()
 end
 
 -- mod 级计算：26.829.0 的免死入口（end_round → SMODS.calculate_context → SMODS.saved）
+-- 同时也处理「白虎·调停」挂起的解除盲注限制（需要 setting_blind 时机）
 mod.calculate = function(self, context)
-    if not (context and context.end_of_round) then return end
+    if not context then return end
+    -- 白虎·调停：跳过盲注时挂起，等下一个盲注 set_blind 之后再解除它的限制
+    if context.setting_blind and G.GAME and G.GAME.blh_break_blind then
+        G.GAME.blh_break_blind = nil
+        if G.GAME.blind and G.GAME.blind.boss then
+            G.GAME.blind:disable()
+            return { message = localize('k_disabled_ex'), colour = G.C.RED }
+        end
+        return
+    end
+    if not context.end_of_round then return end
     -- 每回合复位：否则救过一次后整局都触发不了
     if not context.game_over then
         G.GAME.blh_saved_round = nil
