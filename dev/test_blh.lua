@@ -1106,6 +1106,21 @@ eq('天狗：手牌上限 -2', G.hand.config.card_limit, 6)
 bk.dog.defeat(bk.dog)
 eq('天狗：defeat 还原', G.hand.config.card_limit, 8)
 
+-- soft-lock 保护：惩罚不得把出牌次数 / 手牌上限压到 0
+G.GAME = base_game(); G.hand.config.card_limit = 8
+G.GAME.current_round.hands_left = 1          -- 玩家把出牌次数配置成 1
+G.GAME.blind = new_blind(bk.ox)
+bk.ox.set_blind(bk.ox)
+eq('人牛：出牌次数不会压到 0（保留 1 次，避免无法出牌）', G.GAME.current_round.hands_left, 1)
+bk.ox.disable(bk.ox)
+eq('人牛：夹紧后的还原量正确', G.GAME.current_round.hands_left, 1)
+G.GAME = base_game(); G.hand.config.card_limit = 2
+G.GAME.blind = new_blind(bk.dog)
+bk.dog.set_blind(bk.dog)
+eq('天狗：手牌上限不会压到 0（保留 1 张）', G.hand.config.card_limit, 1)
+bk.dog.defeat(bk.dog)
+eq('天狗：夹紧后能正确还原', G.hand.config.card_limit, 2)
+
 -- 天猪：筹码缩放只作用一次，新一次登场重新掷
 G.GAME = base_game(); G.GAME.blind = new_blind(bk.pig)
 bk.pig.set_blind(bk.pig)

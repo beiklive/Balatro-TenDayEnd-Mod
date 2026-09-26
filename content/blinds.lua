@@ -38,8 +38,10 @@ local function hands_penalty(amount)
         set_blind = function(self)
             local b = blind_ref()
             if not b or b.hands_sub then return end
-            b.hands_sub = amount
-            ease_hands_played(-amount)
+            -- 至少保留 1 次出牌：hands_left 归零会导致本盲注无法出牌（soft-lock）
+            local left = (G.GAME.current_round and G.GAME.current_round.hands_left) or amount + 1
+            b.hands_sub = math.min(amount, math.max(0, left - 1))
+            ease_hands_played(-(b.hands_sub or 0))
         end,
         disable = function(self)
             local b = blind_ref()
@@ -77,15 +79,21 @@ local function hand_size_penalty(amount)
         if b[flag] == false then return end                          -- 本次会话已还原过
         local mine = b.config and b.config.blind == self
         if b[flag] == nil and not mine then return end               -- 读档后标记会丢：确认是自己的盲注才还原
+        local cut = b[flag .. '_amount'] or amount
         b[flag] = false
-        G.hand:change_size(amount)
+        b[flag .. '_amount'] = nil
+        G.hand:change_size(cut)
     end
     return {
         set_blind = function(self)
             local b = blind_ref()
             if not b or b[flag] then return end
+            -- 至少保留 1 张手牌上限：归零后无法抽牌/出牌（soft-lock）
+            local limit = (G.hand and G.hand.config and G.hand.config.card_limit) or amount + 1
+            local cut = math.min(amount, math.max(0, limit - 1))
             b[flag] = true
-            G.hand:change_size(-amount)
+            b[flag .. '_amount'] = cut
+            G.hand:change_size(-cut)
         end,
         disable = restore,
         -- 与原版 The Manacle 一致：被 disable 过的盲注不再在 defeat 时二次还原，

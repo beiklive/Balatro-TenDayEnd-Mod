@@ -330,6 +330,10 @@ SMODS.Joker {
         end
         -- 下一回合首手抽完牌后再复制（原版 Certificate 用的就是 first_hand_drawn）
         if context.first_hand_drawn and not context.blueprint and card.ability.extra.pending then
+            -- 先查空位再消费 pending：否则手牌满时本次复制永久丢失（[TRIGGER-LOST]）
+            if hand_count() == 0 or #G.hand.cards >= G.hand.config.card_limit then
+                return { message = localize('k_no_space_ex'), colour = G.C.RED }
+            end
             card.ability.extra.pending = nil
             G.E_MANAGER:add_event(Event({ trigger = 'after', delay = 0.2, func = function()
                 if hand_count() > 0 and #G.hand.cards < G.hand.config.card_limit then
@@ -551,7 +555,8 @@ SMODS.Joker {
         return { vars = { n, d, card.ability.extra.xmult, tostring(card.ability.extra.penalty * 100) .. '%' } }
     end,
     calculate = function(self, card, context)
-        if context.joker_main and not context.blueprint then
+        -- 计分类效果对 Blueprint 保持兼容（原版计分小丑被复制时应再次生效）
+        if context.joker_main then
             if SMODS.pseudorandom_probability(card, 'blh_huoshui', 1, card.ability.extra.odds) then
                 return { xmult = card.ability.extra.xmult, message = localize('blh_msg_lucky') }
             end
@@ -790,7 +795,8 @@ SMODS.Joker {
         { '计分时复制{C:attention}左侧相邻{}小丑牌的', '{C:mult}+倍率{}一次' },
         { 'Copies the {C:mult}+Mult{} of the Joker', 'to its immediate {C:attention}left{} once per hand' }),
     calculate = function(self, card, context)
-        if context.joker_main and not context.blueprint then
+        -- 复制左邻小丑的 +Mult：Blueprint 复制本牌时应再复制一次
+        if context.joker_main then
             local idx
             for i, j in ipairs(G.jokers.cards) do if j == card then idx = i break end end
             if idx and idx > 1 then

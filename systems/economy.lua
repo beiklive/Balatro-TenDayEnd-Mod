@@ -299,9 +299,7 @@ function Blind:defeat(silent)
     BLH.settle_blind(self)
 end
 
---- 供其他内容文件使用：给道（标签/封印等）
-function SMODS.blh_add_dao(n)
-    BLH.add_dao(n)
-end
+--- 内容文件请直接用 BLH.add_dao(n)。
+--- 注意：不要往 SMODS 全局表挂自己的函数（污染 SMODS 命名空间，可能与未来版本冲突）。
 
 return BLH
