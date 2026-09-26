@@ -1426,12 +1426,22 @@ eq('版本都可进商店且有权重', no_shop, 0)
 -- ③ 封印行为
 G.GAME = audit_game(); G.GAME.dollars = 0
 local sc = { ability = { seal = { dollars = 3 } } }
-eq('玉印：打出 +$3', (sl.yu.calculate(sl.yu, sc, { main_scoring = true, cardarea = G.play }) or {}).dollars, 3)
-eq('玉印：实际入账', G.GAME.dollars, 3)
+do
+    -- 用"总额"模型断言：引擎会结算返回的 dollars，若再手调 ease_dollars 就是双倍给钱
+    local before = G.GAME.dollars
+    local ret = sl.yu.calculate(sl.yu, sc, { main_scoring = true, cardarea = G.play }) or {}
+    local total = (G.GAME.dollars - before) + (ret.dollars or 0)
+    eq('玉印：打出总额恰好 +$3（不双倍）', total, 3)
+end
 G.GAME.dollars = 0
 local bc = { ability = { seal = { chips = 10, dollars = 2 } } }
 eq('神兽印：+10 筹码', (sl.beast.calculate(sl.beast, bc, { main_scoring = true, cardarea = G.play }) or {}).chips, 10)
-eq('神兽印：实际入账 +$2', G.GAME.dollars, 2)
+do
+    local before = G.GAME.dollars
+    local ret = sl.beast.calculate(sl.beast, bc, { main_scoring = true, cardarea = G.play }) or {}
+    local total = (G.GAME.dollars - before) + (ret.dollars or 0)
+    eq('神兽印：打出总额恰好 +$2（不双倍）', total, 2)
+end
 eq('生肖印：repetition 返回 repetitions=1', (sl.zodiac.calculate(sl.zodiac, { ability = { seal = {} } }, { repetition = true, cardarea = G.play }) or {}).repetitions, 1)
 do
     local dcard = { ability = { seal = { dao = 15 } } }
@@ -1441,10 +1451,14 @@ end
 -- 涡印：槽位满时不生成，有空位时生成 1 张
 G.GAME = audit_game()
 G.consumeables = { cards = {}, config = { card_limit = 0 }, emplace = function(self, c) table.insert(self.cards, c) end }
-eq('涡印：槽位满时不生成', sl.wo.calculate(sl.wo, {}, { discard = true }), nil)
-G.consumeables.config.card_limit = 2
-sl.wo.calculate(sl.wo, {}, { discard = true })
-eq('涡印：有空位时生成 1 张塔罗', #G.consumeables.cards, 1)
+do
+    local wocard = { ability = { seal = {} } }
+    eq('涡印：手牌里没被弃的那张不触发', sl.wo.calculate(sl.wo, wocard, { discard = true, other_card = {} }), nil)
+    eq('涡印：槽位满时不生成', sl.wo.calculate(sl.wo, wocard, { discard = true, other_card = wocard }), nil)
+    G.consumeables.config.card_limit = 2
+    sl.wo.calculate(sl.wo, wocard, { discard = true, other_card = wocard })
+    eq('涡印：被弃的那张才生成 1 张塔罗', #G.consumeables.cards, 1)
+end
 -- 每个封印都必须有 badge_colour（UI 需要）
 local no_badge = 0
 for _, x in ipairs(reg.seals) do if not x.badge_colour then no_badge = no_badge + 1 end end
@@ -1455,8 +1469,11 @@ G.GAME = audit_game(); G.GAME.dollars = 0
 eq('记忆保留：+10 筹码', (st.memory.calculate(st.memory, { ability = {} }, { joker_main = true }) or {}).chips, 10)
 eq('原住民：+12 倍率', (st.native.calculate(st.native, { ability = {} }, { joker_main = true }) or {}).mult, 12)
 eq('面具：+8 倍率', (st.mask.calculate(st.mask, { ability = {} }, { joker_main = true }) or {}).mult, 8)
-st.ant.calculate(st.ant, { ability = {} }, { individual = true, cardarea = G.play })
-eq('蝼蚁：每张计分牌 +$1', G.GAME.dollars, 1)
+do
+    local before = G.GAME.dollars
+    local ret = st.ant.calculate(st.ant, { ability = {} }, { individual = true, cardarea = G.play }) or {}
+    eq('蝼蚁：每张计分牌 +$1（走 return，不嵌套 money_altered）', (G.GAME.dollars - before) + (ret.dollars or 0), 1)
+end
 -- 深度回响化：文案写"最多叠加 5 次"，必须真的叠加（原实现永远 +3）
 local dcard = { ability = {} }
 local m1 = (st.deep_echo.calculate(st.deep_echo, dcard, { joker_main = true }) or {}).mult
@@ -1511,4 +1528,147 @@ eq('优惠券都有 cost', no_cost, 0)
 end
 _type_tests()
 
+local function _round3_tests()
+print('== 第三轮审计修复的回归 ==')
+local jk, tk, vc, sl, st, tz = {}, {}, {}, {}, {}, {}
+for _, x in ipairs(reg.jokers) do jk[x.key] = x end
+for _, x in ipairs(reg.tags) do tk[x.key] = x end
+for _, x in ipairs(reg.vouchers) do vc[x.key] = x end
+for _, x in ipairs(reg.seals) do sl[x.key] = x end
+for _, x in ipairs(reg.stickers) do st[x.key] = x end
+for _, x in ipairs(reg.consumables) do if x.set == 'Tarot' then tz[x.key] = x end end
+local function fake_tag(cfg)
+    local t = { config = cfg or {}, triggered = false }
+    t.yep = function(self, ...) for i = 1, select('#', ...) do local v = select(i, ...); if type(v) == 'function' then v() end end end
+    return t
+end
+local function game()
+    G.GAME = { challenge = 'blh_zhongyan', blh_dao = 0, round = 3, dollars = 10, modifiers = {}, banned_keys = {},
+               round_resets = { hands = 4, discards = 3, ante = 5 },
+               current_round = { hands_left = 4, discards_left = 3, voucher = { 'v_blh_mask', spawn = { v_blh_mask = true } } },
+               shop = { joker_max = 2 }, base_reroll_cost = 5 }
+    G.GAME.round_resets.reroll_cost = 5
+    G.hand.config.card_limit = 8
+    G.jokers.config.card_limit = 5
+    G.consumeables = { cards = {}, config = { card_limit = 2 }, emplace = function(self, c) table.insert(self.cards, c) end }
+end
+
+-- ① 塔罗选中上界（SMODS 的 can_use 会绕过原版高亮上限检查）
+game()
+G.hand.highlighted = { {}, {}, {}, {}, {} }
+eq('权柄：高亮 5 张时不可用（上界 2）', tz.dominion.can_use(tz.dominion, {}), false)
+G.hand.highlighted = { {}, {} }
+eq('权柄：高亮 2 张可用', tz.dominion.can_use(tz.dominion, {}), true)
+G.hand.highlighted = { {}, {}, {}, {} }
+eq('牛：高亮 4 张时不可用（上界 3）', tz.ox_run.can_use(tz.ox_run, {}), false)
+G.hand.highlighted = { {}, {}, {} }
+eq('牛：高亮 3 张可用', tz.ox_run.can_use(tz.ox_run, {}), true)
+
+-- ② 蛇：花色并列时不能只结算筹码（原来 elseif 吞掉给钱）
+game()
+-- 四种花色各 1 张 → 计数全并列（minor == major == Spades）：
+-- 原来用 elseif，同一张牌只会结算筹码、吞掉给钱；改成两个独立判断后两者都要结算
+local function suitcard(suit)
+    return { ability = {}, juice_up = noop, is_suit = function(self, s) return s == suit end }
+end
+G.hand.cards = { suitcard('Spades'), suitcard('Hearts'), suitcard('Clubs'), suitcard('Diamonds') }
+G.GAME.dollars = 0
+tz.snake_vote.use(tz.snake_vote, { juice_up = noop }, nil, nil)
+eq('蛇：花色并列时仍然给钱（不再被 elseif 吞掉）', G.GAME.dollars > 0, true)
+eq('蛇：并列花色（黑桃）同时吃到筹码', (G.hand.cards[1].ability.perma_bonus or 0) > 0, true)
+
+-- ③ 虎·强势：必须走原版 reroll_boss（否则盲选 UI 与实际对战不一致）
+game()
+STUB.reroll = false
+local saved_reroll = G.FUNCS.reroll_boss
+G.FUNCS.reroll_boss = function() STUB.reroll = true end
+local t_tiger = fake_tag(tk.tiger_strong.config)
+tk.tiger_strong.apply(tk.tiger_strong, t_tiger, { type = 'new_blind_choice' })
+eq('虎·强势：调用 G.FUNCS.reroll_boss 重建盲选', STUB.reroll, true)
+eq('虎·强势：设置 G.from_boss_tag（豁免原版 -$10）', G.from_boss_tag, true)
+G.FUNCS.reroll_boss = saved_reroll
+G.from_boss_tag = nil
+G.CONTROLLER = nil
+
+-- ④ 狗·传信 / 青龙·之首：免费优惠券真的加进商店，且绝不写 current_round.voucher = nil
+game()
+G.shop_vouchers = { cards = {}, config = { card_limit = 1 }, T = { x = 0, y = 0, w = 1, h = 1 },
+                    emplace = function(self, c) table.insert(self.cards, c) end }
+G.P_CARDS = { empty = {} }
+get_next_voucher_key = function() return 'v_blh_mask' end
+create_shop_card_ui = function() end
+local mt = getmetatable(Card)
+setmetatable(Card, { __call = function(...) return { ability = {}, start_materialize = noop } end })
+-- 桩里 Card 原本是 table，add_free_voucher 的 card_init_ok() 要求它是 callable；
+-- 上面的 __call 已满足 type(Card)=='function'？不满足——改用可调用表并放宽 card_init_ok 判定
+local voucher_before = G.GAME.current_round.voucher
+local t_dog = fake_tag(tk.dog_letter.config)
+tk.dog_letter.apply(tk.dog_letter, t_dog, { type = 'voucher_add' })
+eq('狗·传信：商店多出 1 张免费券', #G.shop_vouchers.cards, 1)
+eq('狗·传信：券是免费的', G.shop_vouchers.cards[1].cost, 0)
+eq('狗·传信：不会把 current_round.voucher 置 nil（否则进商店崩）', G.GAME.current_round.voucher, voucher_before)
+local t_ql = fake_tag(tk.qinglong_head.config)
+G.jokers.cards = {}
+tk.qinglong_head.apply(tk.qinglong_head, t_ql, { type = 'voucher_add' })
+eq('青龙·之首：再加 1 张免费券', #G.shop_vouchers.cards, 2)
+eq('青龙·之首：负片小丑不检查小丑栏（满栏也能给）', #G.jokers.cards, 1)
+eq('青龙·之首：type 已改为 voucher_add', tk.qinglong_head.config.type, 'voucher_add')
+setmetatable(Card, mt)
+
+-- ⑤ 白虎·调停：非 Boss 盲注不消费标记
+game()
+G.GAME.blh_break_blind = true
+G.GAME.blind = { boss = false, disable = function(self) self.disabled = true end }
+SMODS.current_mod.calculate(SMODS.current_mod, { setting_blind = true })
+eq('白虎：大/小盲注不消费标记', G.GAME.blh_break_blind, true)
+G.GAME.blind = { boss = true, disable = function(self) self.disabled = true end }
+SMODS.current_mod.calculate(SMODS.current_mod, { setting_blind = true })
+eq('白虎：Boss 盲注才解除限制', G.GAME.blind.disabled, true)
+eq('白虎：Boss 盲注消费标记', G.GAME.blh_break_blind, nil)
+
+-- ⑥ 朱雀·审判：没有可摧毁的小丑时不给钱
+game()
+G.jokers.cards = {}
+G.GAME.dollars = 0
+tk.zhuque_judge.apply(tk.zhuque_judge, fake_tag(tk.zhuque_judge.config), { type = 'immediate' })
+eq('朱雀：无小丑可摧毁时不给钱', G.GAME.dollars, 0)
+local eternal = { ability = { eternal = true } }
+G.jokers.cards = { eternal }
+tk.zhuque_judge.apply(tk.zhuque_judge, fake_tag(tk.zhuque_judge.config), { type = 'immediate' })
+eq('朱雀：只有永恒小丑时不给钱', G.GAME.dollars, 0)
+
+-- ⑦ 猴·取物 / 鸡·夺械：栏位满时不崩、且不静默（有提示分支）
+game()
+G.jokers.cards = { {}, {}, {}, {}, {} }; G.jokers.config.card_limit = 5
+G.P_JOKER_RARITY_POOLS = { { { key = 'j_blh_x', mod = SMODS.current_mod } }, {}, {}, {} }
+tk.monkey_take.apply(tk.monkey_take, fake_tag(tk.monkey_take.config), { type = 'immediate' })
+eq('猴·取物：小丑栏满时不报错', #G.jokers.cards, 5)
+G.consumeables.cards = { {}, {} }; G.consumeables.config.card_limit = 2
+G.P_CENTER_POOLS.Tarot = { { key = 'c_blh_x' } }
+eq('鸡·夺械：消耗品栏满时不报错', pcall(function()
+    tk.rooster_weapon.apply(tk.rooster_weapon, fake_tag(tk.rooster_weapon.config), { type = 'immediate' })
+end), true)
+
+-- ⑧ 优惠券：面具要让当前商店立刻生效；巨钟要走 change_shop_size
+game()
+G.GAME.current_round.reroll_cost = 5
+STUB.reroll_calc = 0
+calculate_reroll_cost = function() STUB.reroll_calc = STUB.reroll_calc + 1 end
+vc.mask.redeem(vc.mask, {})
+eq('面具：当前商店刷新价立刻下降', G.GAME.current_round.reroll_cost, 4)
+eq('面具：调用 calculate_reroll_cost 重算', STUB.reroll_calc > 0, true)
+game()
+STUB.shop_size = nil
+change_shop_size = function(mod) STUB.shop_size = mod end
+vc.bell_tower.redeem(vc.bell_tower, {})
+eq('巨钟：走 change_shop_size（同时更新商店区域上限）', STUB.shop_size, 1)
+
+-- ⑨ 深度回响化：计数挂在贴纸自己的 ability 子表下（移除贴纸会被清）
+game()
+local dcard = { ability = {} }
+st.deep_echo.calculate(st.deep_echo, dcard, { joker_main = true })
+eq('深度回响化：计数在 ability.blh_deep_echo.hits 下', (dcard.ability.blh_deep_echo or {}).hits, 1)
+eq('深度回响化：顶层不再残留自定义键', dcard.ability.blh_deep_echo_hits, nil)
+end
+_round3_tests()
 print(('ALL PASS (%d checks)'):format(passed))

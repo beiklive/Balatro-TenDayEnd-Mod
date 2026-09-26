@@ -27,18 +27,21 @@ SMODS.Sticker {
 SMODS.Sticker {
     key = 'deep_echo', atlas = 'blh_sticker', pos = { x = 1, y = 0 }, rate = 0.15,
     badge_colour = HEX('7c6bd6'), sets = { Joker = true }, needs_enable_flag = true,
-    config = { mult = 3, cap = 5 },
+    config = { gain = 3, cap = 5 },
     loc_txt = loc('深度回响化', 'Deep Echo',
         { '计分时 {C:mult}+#1#{}倍率', '{C:inactive}（最多叠加 #2# 次）' },
         { '{C:mult}+#1#{} Mult when scoring', '{C:inactive}(stacks up to #2# times)' }),
-    loc_vars = function(self, iq, card) return { vars = { 3, 5 } } end,
+    loc_vars = function(self, iq, card) return { vars = { self.config.gain, self.config.cap } } end,
     calculate = function(self, card, context)
         if context.joker_main then
             -- 文案写「最多叠加 #2# 次」：每次计分 +3，累计到 5 次（最高 +15）。
             -- 原实现只计数不参与计算，永远是 +3，计数器等于死状态。
-            local hits = math.min((card.ability.blh_deep_echo_hits or 0) + 1, 5)
-            card.ability.blh_deep_echo_hits = hits
-            return { mult = 3 * hits }
+            -- 计数放进贴纸自己的 ability 子表：移除贴纸时 apply(false) 会清掉 card.ability[<sticker key>]，
+            -- 挂在顶层自定义键会残留
+            local tbl = card.ability.blh_deep_echo
+            if type(tbl) ~= 'table' then tbl = {}; card.ability.blh_deep_echo = tbl end
+            tbl.hits = math.min((tbl.hits or 0) + 1, self.config.cap)
+            return { mult = self.config.gain * tbl.hits }
         end
     end,
 }
@@ -64,7 +67,8 @@ SMODS.Sticker {
     loc_vars = function(self) return { vars = { 1 } } end,
     calculate = function(self, card, context)
         if context.individual and context.cardarea == G.play then
-            ease_dollars(1)
+            -- 用 return 而不是手调 ease_dollars：后者会额外触发一轮 money_altered 计算且没有金额弹字
+            return { dollars = 1 }
         end
     end,
 }

@@ -9,7 +9,7 @@
 | 设备版 Balatro + Steamodded 26.829.0 源码 dump | `/tmp/dump/dump/`（`game.lua`、`card.lua`、`blind.lua`、`cardarea.lua`、`functions/*.lua`、`SMODS/_/src/{game_object,overrides}.lua`） | 判定 Context / Hook / 生命周期是否真实存在 |
 | SMODS 参考源码 1.0.0-beta-1814a | `/Users/beiklive/Code/Other/Balatro2_mods/smods-1.0.0-beta-1814a`（`src/utils.lua` 等） | 设备版未 dump 的 SMODS 核心（`calculate_context`、`blueprint_effect`、`Blind:calculate`、`get_mods_scoring_targets`） |
 | 原版本地化 | `/Users/beiklive/Code/Other/Balatro_dev/game_original_files/localization/{zh_CN,en-us}.lua` | 术语与概率写法对齐 |
-| 自动回归 | `dev/test_blh.lua`（`luajit dev/test_blh.lua`，**318 项**） | 逐项行为断言（含版本/封印/贴纸/优惠券的行为与边界） |
+| 自动回归 | `dev/test_blh.lua`（`luajit dev/test_blh.lua`，**344 项**） | 逐项行为断言（含版本/封印/贴纸/优惠券的行为与边界） |
 | 静态审计 | `dev/boundary_report.py`、`dev/canuse_audit.py` | 边界矩阵、消耗品可用性 |
 
 > 设备版 26.829.0 是**权威**；SMODS 参考源码仅用于设备版未 dump 的核心文件，凡依赖它的结论都标注 `[REF-ONLY]`。
@@ -21,15 +21,15 @@
 | 类型 | 数量 | PASS | WARN | FAIL | BLOCKED |
 |---|---:|---:|---:|---:|---:|
 | Joker | 30 | 25 | 4 | 1 | 0 |
-| Voucher | 16 | 16 | 0 | 0 | 0 |
-| Tarot | 21 | 21 | 0 | 0 | 0 |
+| Voucher | 16 | 16 | 2 → 修复后 0 | 0 | 0 |
+| Tarot | 21 | 21 | 2 → 修复后 0 | 2 → 修复后 0 | 0 |
 | Spectral | 10 | 10 | 0 | 0 | 0 |
-| Seal | 5 | 5 | 0 | 0 | 0 |
+| Seal | 5 | 3 | 0 | 5 → 修复后 0 | 0 |
 | Edition | 5 | 5 | 0 | 0 | 0 |
-| Tag | 16 | 12 | 4 | 0 | 0 |
+| Tag | 16 | 13 | 3 → 修复后 0 | 3 → 修复后 0 | 0 |
 | Blind | 12 | 12 | 0 | 0 | 0 |
-| Sticker | 5 | 4 | 1 | 0 | 0 |
-| **合计** | **120** | **111** | **8** | **1** | **0** |
+| Sticker | 5 | 5 | 1 → 修复后 0 | 0 | 0 |
+| **合计** | **120** | **110** | **8** | **11** | **0** |
 
 计数口径：FAIL = 承诺的效果不存在或必然丢失；WARN = 功能可用但存在时机/文案/兼容性问题（本报告 §3–§5 逐条列出，**本轮已全部修复**，表内为修复前判定）。
 **BLOCKED = 0**：没有任何对象依赖不存在或无法验证的机制（依据 §6 能力矩阵）。
@@ -258,7 +258,7 @@
 - **Condition**：26 张消耗品的 `can_use` 覆盖其 `use` 依赖的资源（`dev/canuse_audit.py` 26/26）
 - **Action / State**：所有状态字段要么随回合复位（`count`/`pending`/`discarded`/`rnd`），要么是设计上的永久成长（`mult`/`made`），要么借用原版存档字段（`hands_sub`/`discards_sub`）
 - **Boundary**：见 §8
-- **文案**：318 项回归中包含"每个消耗品必须有条件行 / `loc_vars` 变量必须被使用 / 中文不得残留英文 / 数值段必须带单位"
+- **文案**：344 项回归中包含"每个消耗品必须有条件行 / `loc_vars` 变量必须被使用 / 中文不得残留英文 / 数值段必须带单位"
 - **兼容性**：Blueprint（计分类兼容、永久成长类按原版惯例跳过）、Retrigger（`repetition` 已排除）、Debuff（引擎行为）、Copy（`set_ability`/`copy_card` 保留强化与版本）
 - **版本 / 封印 / 贴纸 / 优惠券**（规范 §VII/§X/§XI/§XIV）：本轮补齐行为验证——5 个版本的 shader 与计分/成长断言；
   5 个封印的触发点与槽位边界；5 张贴纸的数值与叠加上限；16 张优惠券 `redeem` 逐张「必须真的改变状态」+ `requires` 链可解析
@@ -293,8 +293,8 @@
 
 | 检查项 | 结果 | 证据 |
 |---|---|---|
-| 修改是否解决原问题 | 是 | 318 项回归中新增 30+ 项针对本轮修复的断言全部通过 |
-| 是否引入新问题 | 否 | 全量 `luajit -bl` 语法检查通过；318/318 通过 |
+| 修改是否解决原问题 | 是 | 344 项回归中新增 30+ 项针对本轮修复的断言全部通过 |
+| 是否引入新问题 | 否 | 全量 `luajit -bl` 语法检查通过；344/344 通过 |
 | 是否破坏其他卡牌 | 否 | 旧断言（探囊"回合结束扣钱"）已按新语义同步更新，其余断言未改 |
 | 是否破坏公共机制 | 否 | `mod.calculate` 新增 `setting_blind` 分支，`end_of_round` 分支行为不变（测试覆盖免死/复位） |
 | 是否改变描述 | 是（有意） | 6 处文案对齐 + 2 个新本地化键，中英同步 |
@@ -302,7 +302,7 @@
 | Blueprint | 保持兼容 | 计分类去掉了多余的守卫；永久成长类仍按原版惯例跳过 |
 | Retrigger | 无影响 | `repetition` 子通过仍被排除 |
 | Save / Load | 无回归 | 状态仍落在 `G.GAME` / `ability.extra` / 原版存档字段上 |
-| 新增测试是否覆盖四类对象 | 是 | 版本/封印/贴纸/优惠券 新增 41 项行为断言（283 → 318） |
+| 新增测试是否覆盖四类对象 | 是 | 版本/封印/贴纸/优惠券 新增 41 项行为断言（283 → 344） |
 | 深度回响化叠加是否引入新问题 | 否 | 仅改返回值与计数逻辑；`card.ability.blh_deep_echo_hits` 仍在卡牌自身、随存档 |
 | 静态审计 | 全绿 | `dev/boundary_report.py` 0 告警、`dev/canuse_audit.py` 26/26、中文文案 0 英文残留、SMODS 命名空间 0 污染 |
 
@@ -317,3 +317,73 @@
   3. 「随机强化牌」未在文案里枚举 8 种池；
   4. 仅 iOS + Steamodded 26.829.0 实测，其他平台/版本未验证。
 - **必须真机确认的 8 项**：见 `DESIGN.md` §22.6 / §23.5 / §26.5 / §27.4 / §28.4 / §29.8。
+
+
+---
+
+## 14. 独立切片审计合并（v2.3.6 → v2.3.9）
+
+除本报告 §22–§29 的自审外，另派 3 个**只读**子代理独立复核切片：优惠券+标签、封印+贴纸+塔罗+本地化、幻灵+版本。
+其中 2 份已返回（第三份未在时限内返回，其切片由 §22/§27 与 `dev/test_blh.lua` 覆盖）。
+所有结论都经我**回到设备源码逐条复核**后才落地修复。
+
+### 14.1 独立审计发现并已修复的问题
+
+| 优先级 | 对象 | 问题 | 证据（设备源码） | 修复 |
+|---|---|---|---|---|
+| **P0** | 青龙·之首（标签） | `G.GAME.current_round.voucher = nil` → 进入新生成的商店时 `game.lua:3329` 无条件读 `.spawn` → **报错中断**；且"免费优惠券"完全没实现 | `game.lua:3329/3331/3333-3334`；`current_round.voucher` 全部赋值点（`game.lua:2254`、`state_events.lua:205`） | 删掉置 nil；type 改 `voucher_add`；自己实现免费券（加 `card.cost=0`/`couponed`） |
+| **P0** | 狗·传信（标签） | `voucher_add` 生效但原版效果被 `self.name == 'Voucher Tag'` 挡住（`tag.lua:323`）→ **零效果** | `tag.lua:322-340`；模组内无 `couponed`/`voucher_tag` 引用 | 自己实现加券（照抄原版路径 + 显式免费） |
+| **P0** | 涡印（封印） | 缺 `context.other_card == card` 守卫 → 弃 1 张时**手牌里每张带涡印的牌都触发**（`state_events.lua:413` 直调 + `:416` 全量 context） | 原版紫印 `card.lua:2618`；`state_events.lua:405-418` | 加守卫 + 回归（"没被弃的那张不触发"） |
+| **P0** | 玉印 / 神兽印（封印） | 手调 `ease_dollars` **又** `return {dollars=…}` → `dollars` 是 SMODS calculation_key，引擎再结算一次 → **双倍给钱**（UI 只显示一份） | 参考 `utils.lua:1584/1312-1316`、`game_object.lua:3801` | 删手调，只留 return；测试改为"总额"模型（旧实现会算出 2 倍而失败） |
+| **P1** | 权柄 / 牛·障碍赛跑（塔罗） | `can_use` 只判 `>0`，而 SMODS 的 `obj.can_use` 会**提前 return**，跳过原版「高亮数 ≤ max_highlighted」检查 → 文案"1~2 张 / 至多 3 张"被突破 | `card.lua:1838-1840`（提前 return）vs `1871-1887`（原版上界）；`cardarea.lua:35` 高亮上限恒 5 | 两处 `can_use` 各加 `#highlighted() <= max_highlighted` |
+| **P1** | 虎·强势（标签） | 只改 `blind_choices.Boss`，不重建已生成的盲选 UI → 显示与实际对战不一致；文案还写"本盲注" | 原版 Boss Tag `tag.lua:305-321` → `G.FUNCS.reroll_boss`（`button_callbacks.lua:2901-2965`） | 改走原版路径（`G.from_boss_tag=true` + `reroll_boss`），文案改"Boss 盲注" |
+| **P1** | 面具（优惠券） | 只改 `round_resets.reroll_cost` → **当前商店仍原价**；`base_reroll_cost` 全 dump 只写不读（死写） | `common_events.lua:2617-2624`；原版 `v_reroll_surplus` | 同时改 `current_round.reroll_cost` + `calculate_reroll_cost(true)`；删死写 |
+| **P1** | 巨钟（优惠券） | 只改 `shop.joker_max`，未走 `change_shop_size` → 本商店不加位、商店内刷新还会溢出 `card_limit` | `common_events.lua:1334-1353`；原版 `v_overstock` | 改调 `change_shop_size(extra)` |
+| **P1** | 马·竞速（标签） | 文案"每张已打出的牌获得 2 道"，实际按「打出过几次牌型」求和 | `tags.lua:155-163` vs `state_events.lua:589` | 文案改为「本局每打出过 1 次牌型获得 2 道」 |
+| **P1** | 白虎·调停（标签） | 标记**先清后判** Boss；跳小盲注时下一个是大盲注（无限制）→ 标签白白消耗 | `button_callbacks.lua:2861-2863` 跳盲推进 | 只在 Boss 盲注消费；文案改"下一个 Boss 盲注" |
+| P2 | 蛇·少数与多数（塔罗） | 花色并列时 `minor == major`，`elseif` 吞掉给钱分支 | 实现自证 | 改两个独立判断 + 并列场景回归 |
+| P2 | 朱雀·审判（标签） | 无小丑 / 只有永恒小丑时仍白拿 $30 | 实现自证 | 只有真的摧毁才给钱，否则提示 |
+| P2 | 猴·取物 / 鸡·夺械（标签） | 栏位满时静默失败但标签照消耗 | `tags.lua:13/38` 的容量门 | 满时给"没有空间"提示 |
+| P2 | 青龙·之首（标签） | 负片小丑不占小丑栏却按 `card_limit` 拦 | 负片 +1 槽位（`game_object.lua:3758-3762`） | 去掉该门 |
+| P3 | 生肖印（封印） | `config.repetitions` 写进 `ability.seal.*` 后无人读取（引擎读顶层 `ability.repetitions`） | `card.lua:617-624` vs `common_events.lua:630` | 删除该字段 |
+| P3 | 蝼蚁（贴纸） | 手调 `ease_dollars` → 每张计分牌多触发一轮 `money_altered` 计算且无金额弹字 | 参考 `utils.lua:3439-3450` | 改为 `return { dollars = 1 }` |
+| P3 | 深度回响化（贴纸） | 计数键挂在 `card.ability` 顶层，移除贴纸时不清零；`config` 灰度未参与计算 | 贴纸 `apply(false)` 只清 `card.ability[<sticker key>]` | 计数放进 `card.ability.blh_deep_echo.hits`，数值读 `config.gain/cap` |
+| P3 | 镜像（塔罗） | 漏 `G.deck.config.card_limit + 1`（原版 DNA/Cryptid 都有；`big_hands/tiny_hands` 读这个值） | `card.lua:1539 / 3902` | 补回该行（§22 当时的"删除手改"结论对"入牌堆"路径成立，对"入手牌"路径不成立） |
+| P3 | 商店区域 | `G.P_STICKERS` 在 26.829.0 **不存在** → `pools.lua` 的贴纸禁用循环是死代码 | 全 dump / 参考源码 grep 均无 | 删除该循环并改注释 |
+| P3 | 代码卫生 | `card_init_ok` 局部函数定义在调用点**之后**（Lua 不可前向引用）→ 真机会 nil；`type(Card)=='function'` 判错（`Card` 是可调用表） | 自测在 5 分钟内抓到 | 前移定义 + 判定改为 `Card ~= nil` |
+
+### 14.2 独立审计确认无问题（保留记录）
+
+- 16 张优惠券的 `round_resets.*` / `card_limit` / `ease_dollars` / `requires` 链全部走原版同类写法 ✓
+- 16 张标签的 `config.type` 均为原版真实取值，且各 type 的 `apply_to_run` 调用点真实存在（`store_joker_create`/`store_joker_modify`/`eval`/`voucher_add`/`new_blind_choice`/`immediate`/`round_start_bonus`/`shop_start`/`tag_add`）✓
+- 塔罗 21 张 `pos` 唯一、图集 497×285 = 7×71×3×95 ✓；选中张数/目标条件与文案一致（除本轮修掉的 2 张上界）✓
+- 封印 `badge_colour`、贴纸 `sets`/`rate`/`needs_enable_flag` 与挑战 `enable_blh_*` 一一对应 ✓
+- 本地化：**无缺失 key**、zh/en 键集合**完全一致**、无未闭合 `{C:}` 标签、中文无英文残留（`A` 为点数符号、`Boss` 与模组名除外）✓
+
+### 14.3 仍未处理的 WARN（有意保留，非遗漏）
+
+| 对象 | WARN | 决定 |
+|---|---|---|
+| 道印封印 / 鼠·寻道 / 马·竞速 标签 | 普通局（非挑战）也会从池里出现，此时"道"无 HUD，玩家看不到 | 保留：道是本模组的独立资源，模组内容本就允许在普通局出现；若需"只在挑战内出现"，改 `in_pool`/池过滤（当前 SMODS 对 Seal 无 `in_pool` 支持，需改池重建） |
+| 面具（优惠券）强度 | −$1 弱于原版 reroll 券的 −$2 | 保留：本模组 8 组券的整体曲线按 10 天预算设计 |
+| 猪·博弈（标签） | 期望 +25% 金钱、无成本 | 保留：设计原型就是 Gamble |
+| 玄武·公正（标签） | 一次免死 = 可救整局 | 保留：这是该标签的唯一设计目的（且是"充能"不是"无限免死"，用掉即消耗） |
+| 3 张固定数值贴纸 | `config` 只用于展示、数值内联 | 保留：数值一致、行为正确，仅可维护性 |
+
+### 14.4 本轮新增回归（318 → 344 项）
+
+- 涡印：没被弃的那张不触发 / 被弃的那张才生成
+- 玉印、神兽印、蝼蚁：**总额模型**断言（旧的双倍给钱实现会被判失败）
+- 权柄/牛：高亮 5 张不可用、2/3 张可用
+- 蛇：花色并列时筹码与金钱都结算
+- 虎·强势：调用 `G.FUNCS.reroll_boss` 且置 `G.from_boss_tag`
+- 狗·传信 / 青龙·之首：商店多出 1 张**免费**券；且 `current_round.voucher` 不被置 nil；负片小丑满栏也能给
+- 白虎·调停：非 Boss 盲注不消费、Boss 才解除
+- 朱雀·审判：无小丑 / 只有永恒小丑时不给钱
+- 面具：当前商店刷新价立刻下降且调用重算；巨钟：走 `change_shop_size`
+- 深度回响化：计数在贴纸命名空间下、顶层无残留
+
+### 14.5 二次审计（v2.3.9）
+
+语法全绿；`luajit dev/test_blh.lua` → **344/344**；`boundary_report.py` 0 告警；`canuse_audit.py` 26/26（`mirror` 的"牌堆"提示为既有误报：它在 `use` 里读的是 `G.deck.config.card_limit` 上限自增，`can_use` 已正确检查手牌空位）；
+`grep` 复核：`content/seals.lua` 无手调 `ease_dollars`、`content/tags.lua` 无 `current_round.voucher = nil`、塔罗 2 处高亮上界、涡印守卫存在。

@@ -231,8 +231,10 @@ mod.calculate = function(self, context)
     if not context then return end
     -- 白虎·调停：跳过盲注时挂起，等下一个盲注 set_blind 之后再解除它的限制
     if context.setting_blind and G.GAME and G.GAME.blh_break_blind then
-        G.GAME.blh_break_blind = nil
+        -- 只在 Boss 盲注消费：标签是跳盲拿到的，下一个盲注往往是大盲注（没有可解除的限制），
+        -- 先清标记会让标签白白消耗
         if G.GAME.blind and G.GAME.blind.boss then
+            G.GAME.blh_break_blind = nil
             G.GAME.blind:disable()
             return { message = localize('k_disabled_ex'), colour = G.C.RED }
         end

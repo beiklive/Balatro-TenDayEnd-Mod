@@ -63,13 +63,12 @@ local function apply_banned_keys()
     for key, blind in pairs((ORIG and ORIG.blinds) or G.P_BLINDS or {}) do
         if blind.boss and not is_ours(blind) then bk[key] = true end
     end
-    -- 封印 / 贴纸只加 banned_keys，不从 G.P_SEALS / G.P_STICKERS 里删除：
-    -- card.lua 会无条件索引 G.P_SEALS[self.seal]，删表会让带封印的牌直接报错
+    -- 封印只加 banned_keys，不从 G.P_SEALS 里删除：card.lua 会无条件索引 G.P_SEALS[self.seal]，
+    -- 删表会让带封印的牌直接报错。
+    -- （贴纸不走这里：G.P_STICKERS 在 26.829.0 不存在，贴纸表是 SMODS.Stickers；
+    --   本模组贴纸靠 needs_enable_flag + 挑战 rules.custom 限定，见 DESIGN §9.3）
     for key, seal in pairs(G.P_SEALS or {}) do
         if not is_ours(seal) then bk[key] = true end
-    end
-    for key, st in pairs(G.P_STICKERS or {}) do
-        if not is_ours(st) then bk[key] = true end
     end
 end
 

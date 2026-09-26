@@ -114,8 +114,15 @@ voucher {
     loc_txt = loc('面具', 'The Mask', { '商店刷新费用 {C:money}-$#1#{}' }, { 'Reroll cost {C:money}-$#1#{}' }),
     loc_vars = function(self) return { vars = { self.config.extra } } end,
     redeem = function(self, card)
+        -- 原版 v_reroll_surplus 同时改 round_resets 与 current_round 并立即重算：
+        -- 只改 round_resets 的话当前商店仍显示原价（要等下回合 new_round 才降）。
+        -- base_reroll_cost 在 26.829.0 全源码只有写没有读 → 死写，已删除。
         G.GAME.round_resets.reroll_cost = math.max(0, G.GAME.round_resets.reroll_cost - self.config.extra)
-        G.GAME.base_reroll_cost = math.max(0, G.GAME.base_reroll_cost - self.config.extra)
+        if G.GAME.current_round then
+            G.GAME.current_round.reroll_cost = math.max(0,
+                (G.GAME.current_round.reroll_cost or G.GAME.round_resets.reroll_cost) - self.config.extra)
+        end
+        if type(calculate_reroll_cost) == 'function' then calculate_reroll_cost(true) end
     end,
 }
 voucher {
@@ -124,8 +131,15 @@ voucher {
     loc_txt = loc('永久回响者', 'Eternal Echoer', { '商店刷新费用再 {C:money}-$#1#{}' }, { 'Reroll cost {C:money}-$#1#{} more' }),
     loc_vars = function(self) return { vars = { self.config.extra } } end,
     redeem = function(self, card)
+        -- 原版 v_reroll_surplus 同时改 round_resets 与 current_round 并立即重算：
+        -- 只改 round_resets 的话当前商店仍显示原价（要等下回合 new_round 才降）。
+        -- base_reroll_cost 在 26.829.0 全源码只有写没有读 → 死写，已删除。
         G.GAME.round_resets.reroll_cost = math.max(0, G.GAME.round_resets.reroll_cost - self.config.extra)
-        G.GAME.base_reroll_cost = math.max(0, G.GAME.base_reroll_cost - self.config.extra)
+        if G.GAME.current_round then
+            G.GAME.current_round.reroll_cost = math.max(0,
+                (G.GAME.current_round.reroll_cost or G.GAME.round_resets.reroll_cost) - self.config.extra)
+        end
+        if type(calculate_reroll_cost) == 'function' then calculate_reroll_cost(true) end
     end,
 }
 
@@ -137,14 +151,30 @@ voucher {
     config = { extra = 1 },
     loc_txt = loc('巨钟', 'The Great Bell', { '商店商品位 {C:attention}+#1#{}' }, { '{C:attention}+#1#{} Shop slot' }),
     loc_vars = function(self) return { vars = { self.config.extra } } end,
-    redeem = function(self, card) G.GAME.shop.joker_max = G.GAME.shop.joker_max + self.config.extra end,
+    -- 原版 v_overstock 走 change_shop_size：它同时更新 shop.joker_max 与当前商店区域的
+    -- card_limit；只改 joker_max 会让本商店不加位、商店内刷新还溢出 card_limit
+    redeem = function(self, card)
+        if type(change_shop_size) == 'function' then
+            change_shop_size(self.config.extra)
+        else
+            G.GAME.shop.joker_max = G.GAME.shop.joker_max + self.config.extra
+        end
+    end,
 }
 voucher {
     key = 'bell_tower_plus', atlas = 'blh_voucher', pos = { x = 6, y = 1 }, cost = 10, discovered = true,
     config = { extra = 1 }, requires = { 'v_blh_bell_tower' },
     loc_txt = loc('钟鸣不止', 'Endless Chime', { '商店商品位再 {C:attention}+#1#{}' }, { '{C:attention}+#1#{} more Shop slot' }),
     loc_vars = function(self) return { vars = { self.config.extra } } end,
-    redeem = function(self, card) G.GAME.shop.joker_max = G.GAME.shop.joker_max + self.config.extra end,
+    -- 原版 v_overstock 走 change_shop_size：它同时更新 shop.joker_max 与当前商店区域的
+    -- card_limit；只改 joker_max 会让本商店不加位、商店内刷新还溢出 card_limit
+    redeem = function(self, card)
+        if type(change_shop_size) == 'function' then
+            change_shop_size(self.config.extra)
+        else
+            G.GAME.shop.joker_max = G.GAME.shop.joker_max + self.config.extra
+        end
+    end,
 }
 
 ------------------------------------------------------------------

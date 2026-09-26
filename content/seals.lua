@@ -31,8 +31,9 @@ SMODS.Seal {
     loc_txt = loc('玉印', 'Jade Seal', { '打出时获得 {C:money}$#1#{}' }, { 'Gain {C:money}$#1#{} when played' }),
     loc_vars = function(self, iq, card) return { vars = { card.ability.seal.dollars } } end,
     calculate = function(self, card, context)
+        -- 只 return：dollars 是 SMODS calculation_key，引擎会结算一次；
+        -- 再手调 ease_dollars 会变成双倍给钱（UI 仍只显示一份）
         if context.main_scoring and context.cardarea == G.play then
-            ease_dollars(card.ability.seal.dollars)
             return { dollars = card.ability.seal.dollars }
         end
     end,
@@ -44,7 +45,10 @@ SMODS.Seal {
     config = {},
     loc_txt = loc('涡印', 'Vortex Seal', { '弃掉时生成 {C:attention}1{} 张随机塔罗牌' }, { 'Creates {C:attention}1{} random Tarot when discarded' }),
     calculate = function(self, card, context)
-        if context.discard and #G.consumeables.cards < G.consumeables.config.card_limit then
+        -- 关键守卫：discard 上下文会对**手牌中每张牌**派发一次（other_card 才是被弃的那张），
+        -- 少了这个判断 = 手牌里每张涡印牌都触发一次（原版紫印：card.lua:2618）
+        if context.discard and context.other_card == card
+            and #G.consumeables.cards < G.consumeables.config.card_limit then
             G.E_MANAGER:add_event(Event({ trigger = 'after', delay = 0.2, func = function()
                 -- 事件内复查：判定到事件执行之间可能已被别的效果占满
                 if #G.consumeables.cards < G.consumeables.config.card_limit then
@@ -62,7 +66,7 @@ SMODS.Seal {
 -- 生肖印：再触发一次
 SMODS.Seal {
     key = 'zodiac', atlas = 'blh_seal', pos = { x = 3, y = 0 }, badge_colour = HEX('c94f4f'),
-    config = { repetitions = 1 },
+    config = {},
     loc_txt = loc('生肖印', 'Zodiac Seal', { '打出时额外触发 {C:attention}1{} 次' }, { 'Retriggers this card {C:attention}1{} time' }),
     calculate = function(self, card, context)
         if context.repetition and context.cardarea == G.play then
@@ -81,8 +85,8 @@ SMODS.Seal {
     loc_vars = function(self, iq, card) return { vars = { card.ability.seal.chips, card.ability.seal.dollars } } end,
     calculate = function(self, card, context)
         if context.main_scoring and context.cardarea == G.play then
-            ease_dollars(card.ability.seal.dollars)
-            return { chips = card.ability.seal.chips }
+            -- 同玉印：钱只通过 return 结算，避免双倍
+            return { chips = card.ability.seal.chips, dollars = card.ability.seal.dollars }
         end
     end,
 }

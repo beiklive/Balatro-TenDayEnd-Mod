@@ -81,7 +81,11 @@ SMODS.Consumable {
     loc_txt = loc('权柄', 'The Dominion',
         { '将选中的 {C:attention}1~2{} 张手牌点数变为 {C:attention}A{}', '{C:inactive}（至少选中 1 张，至多 2 张）' },
         { 'Turns the selected {C:attention}1~2{} cards into {C:attention}Aces{}', '{C:inactive}(select at least 1 card, up to 2)' }),
-    can_use = function(self, card) return G.hand ~= nil and #highlighted() > 0 end,
+    -- SMODS 的 obj.can_use 会直接 return，跳过原版「高亮数 ≤ max_highlighted」检查
+    -- （设备源码 card.lua:1838-1840 提前返回 vs 1871-1887 的原版上界），所以必须自己判
+    can_use = function(self, card)
+        return G.hand ~= nil and #highlighted() > 0 and #highlighted() <= self.config.max_highlighted
+    end,
     use = function(self, card, area, copier)
         local targets = {}
         for i = 1, math.min(#highlighted(), self.config.max_highlighted) do targets[#targets + 1] = highlighted()[i] end
@@ -115,6 +119,9 @@ SMODS.Consumable {
             G.playing_card = (G.playing_card and G.playing_card + 1) or 1
             local new_card = copy_card(target, nil, nil, G.playing_card)
             new_card:add_to_deck()
+            -- 与原版 DNA/Cryptid 一致（card.lua:1539 / 3902）：新牌要计入牌堆上限，
+            -- big_hands / tiny_hands 这类判定读的就是 G.deck.config.card_limit
+            G.deck.config.card_limit = G.deck.config.card_limit + 1
             table.insert(G.playing_cards, new_card)
             G.hand:emplace(new_card)
             new_card:start_materialize()
@@ -242,7 +249,10 @@ SMODS.Consumable {
         { '选中至多 {C:attention}3{} 张牌：全部{C:attention}同花色{}则各点数 {C:attention}+#1#{}，', '否则各点数 {C:attention}+#2#{}', '{C:inactive}（至多 3 张；点数上限为 A，不会再升）' },
         { 'Select up to {C:attention}3{} cards: if they all share a {C:attention}suit{},', 'each gains {C:attention}+#1#{} rank, otherwise {C:attention}+#2#{}', '{C:inactive}(up to 3 cards; ranks cap at Ace)' }),
     loc_vars = function(self, iq) return { vars = { self.config.extra.same, self.config.extra.diff } } end,
-    can_use = function(self, card) return G.hand ~= nil and #highlighted() > 0 end,
+    -- 同上：必须自己判高亮上界（文案写"至多 3 张"）
+    can_use = function(self, card)
+        return G.hand ~= nil and #highlighted() > 0 and #highlighted() <= self.config.max_highlighted
+    end,
     use = function(self, card, area, copier)
         local targets = {}
         for i = 1, math.min(#highlighted(), self.config.max_highlighted) do targets[#targets + 1] = highlighted()[i] end
@@ -355,10 +365,13 @@ SMODS.Consumable {
         local minor, major = pick_suit(counts, false), pick_suit(counts, true)
         head_start(card)
         each_hand_card(function(c)
-            if suit_of(c) == minor then
+            -- 两个独立判断：花色并列时 minor == major，用 elseif 会只结算筹码、吞掉给钱
+            local suit = suit_of(c)
+            if suit == minor then
                 c.ability.perma_bonus = (c.ability.perma_bonus or 0) + self.config.extra.chips
                 c:juice_up(0.3, 0.3)
-            elseif suit_of(c) == major then
+            end
+            if suit == major then
                 ease_dollars(self.config.extra.dollars)
             end
         end, 0.07)
