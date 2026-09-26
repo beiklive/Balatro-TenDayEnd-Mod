@@ -526,10 +526,15 @@ for _, f in ipairs({ 'content/jokers.lua', 'content/seals.lua', 'content/spectra
                 -- 条件可能续行；合并到本行结束（分号或 then）为止
                 local cond = line
                 for j = i + 1, math.min(#lines, i + 3) do
-                    if cond:find('then', 1, true) or cond:find('and not context.blueprint') then break end
+                    if cond:find('then', 1, true) then break end
                     cond = cond .. ' ' .. lines[j]
                 end
-                if not cond:find('main_eval', 1, true) then
+                -- 设备版原版小丑用 `not individual / not repetition` 判定主通过；
+                -- SMODS 还会额外塞 main_eval。两者任一即可（不得两者都没有）。
+                local safe = cond:find('main_eval', 1, true)
+                             or (cond:find('not context.individual', 1, true)
+                                 and cond:find('not context.repetition', 1, true))
+                if not safe then
                     miss_guard[#miss_guard + 1] = f .. ':' .. i
                 end
             else
@@ -548,7 +553,7 @@ for _, f in ipairs({ 'content/jokers.lua', 'content/seals.lua', 'content/spectra
         end
     end
 end
-eq('常规 end_of_round 分支均带 main_eval' .. (#miss_guard > 0 and (' [违规: ' .. table.concat(miss_guard, ', ') .. ']') or '') .. (' (共%d处)'):format(normal_n), #miss_guard, 0)
+eq('常规 end_of_round 分支都有主通过判定（main_eval 或 not individual/repetition）' .. (#miss_guard > 0 and (' [违规: ' .. table.concat(miss_guard, ', ') .. ']') or '') .. (' (共%d处)'):format(normal_n), #miss_guard, 0)
 eq('失败 end_of_round 分支均置 SMODS.saved' .. (#miss_saved > 0 and (' [违规: ' .. table.concat(miss_saved, ', ') .. ']') or '') .. (' (共%d处)'):format(fail_n), #miss_saved, 0)
 
 -- ③ 行为：赝品在回合结束只挂起，首手抽牌后才真正复制
@@ -935,6 +940,51 @@ for _, bucket in ipairs({ reg.jokers, reg.consumables, reg.vouchers, reg.tags, r
     end
 end
 eq('中文数值段都带「倍率/筹码」单位' .. (bad_unit > 0 and (' [如 ' .. bad_unit_seg .. ']') or ''), bad_unit, 0)
+
+print('== 生生不息：回合计数与产出 ==')
+local ss
+for _, j in ipairs(reg.jokers) do if j.key == 'sheng_sheng_bu_xi' then ss = j end end
+local function ss_game()
+    return { challenge = 'blh_zhongyan', blh_dao = 0, round = 1, dollars = 4, modifiers = {}, banned_keys = {},
+             round_resets = { hands = 4, ante = 5 },
+             current_round = { hands_left = 4, discards_left = 3 } }
+end
+G.GAME = ss_game()
+G.jokers = { cards = {}, config = { card_limit = 5 }, emplace = function(self, c) table.insert(self.cards, c) end }
+local ss_card = { ability = { extra = { every = 3, count = 0, made = 0, cap = 3 } }, juice_up = noop }
+
+-- 关键回归：不再依赖 main_eval，普通回合结束上下文就能推进计数
+ss.calculate(ss, ss_card, { end_of_round = true, game_over = false })
+eq('生生不息：第 1 回合结束 count = 1', ss_card.ability.extra.count, 1)
+ss.calculate(ss, ss_card, { end_of_round = true, game_over = false })
+eq('生生不息：第 2 回合结束 count = 2', ss_card.ability.extra.count, 2)
+ss.calculate(ss, ss_card, { end_of_round = true, game_over = false })
+eq('生生不息：第 3 回合产出 1 张负片小丑', #G.jokers.cards, 1)
+eq('生生不息：made = 1', ss_card.ability.extra.made, 1)
+local lv = ss.loc_vars(ss, {}, ss_card)
+eq('生生不息：描述第 4 个变量是累计回合数（每回合都会变）', lv.vars[4], 3)
+eq('生生不息：描述第 2 个变量是已生成张数', lv.vars[2], 1)
+
+-- individual / repetition 子通过不得重复触发
+local before = ss_card.ability.extra.count
+ss.calculate(ss, ss_card, { end_of_round = true, game_over = false, individual = true })
+ss.calculate(ss, ss_card, { end_of_round = true, game_over = false, repetition = true })
+eq('生生不息：individual / repetition 子通过被忽略', ss_card.ability.extra.count, before)
+ss.calculate(ss, ss_card, { end_of_round = true, game_over = true })
+eq('生生不息：失败回合不推进', ss_card.ability.extra.count, before)
+
+-- 小丑栏满：不产出、不消耗 cap，并给出「没有空间」提示
+G.jokers.config.card_limit = 1        -- 已有 1 张，视为满
+ss_card.ability.extra.count = 5       -- 下一次判定落在第 6 回合
+local ret = ss.calculate(ss, ss_card, { end_of_round = true, game_over = false })
+eq('生生不息：栏满时不产出', #G.jokers.cards, 1)
+eq('生生不息：栏满时不消耗 cap', ss_card.ability.extra.made, 1)
+eq('生生不息：栏满时给出提示', type(ret) == 'table' and ret.message ~= nil, true)
+G.jokers.config.card_limit = 5
+ss_card.ability.extra.count = 8       -- 第 9 回合
+ss.calculate(ss, ss_card, { end_of_round = true, game_over = false })
+eq('生生不息：腾出位置后继续产出', #G.jokers.cards, 2)
+eq('生生不息：made = 2', ss_card.ability.extra.made, 2)
 
 print('== 盲注（Boss）效果 ==')
 local bk = {}

@@ -887,3 +887,59 @@ functions/misc_functions.lua:869: attempt to index local 'C1' (a nil value)
 
 - 幻灵与塔罗的**卡面**没有把条件印上去（只影响描述面板）——这是美术范畴，见 README「美术素材不足」。
 - 原版消耗品描述行数上限约 5 行；本模组目前最多 3 行，后续加长仍需注意面板高度。
+
+---
+
+## 28. 真机反馈：生生不息「推进回合看不到计数增加」
+
+### 28.1 两个原因（都已修）
+
+**原因 A：描述里显示的是「已生成张数」，不是回合计数**
+
+`loc_vars` 原来返回 `{ every, made, cap }`，描述是「（本牌已生成 #2#/#3#）」。
+而 `made` **只在真正生成时才 +1**，条件有两个：每 3 回合一次 **且** 小丑栏有空位。
+5 个栏位在挑战里通常第 3 回合就满了 → `made` 永远是 `0/3` → 看起来"没生效"。
+
+修复：描述改为 `（已积累 #4# 回合，已生成 #2#/#3#）`，`#4#` 是 `count`，**每个回合结束都会 +1**；
+`#2#` 仍是实际生成张数。这样"是否在推进"一眼可见，也不会把"栏满"误读成"没生效"。
+
+**原因 B：`end_of_round` 守卫依赖 `context.main_eval`**
+
+- `main_eval` **不是引擎字段**，而是 SMODS 在 `SMODS.calculate_context` 内部临时塞进去的
+  （本地 SMODS 参考 `beta-1814a`：`src/utils.lua:2055` `context.main_eval = true`，只包住小丑那一次遍历）。
+- 设备版 26.829.0 的源码 dump 里 **`main_eval` 零出现**；SMODS 的 `utils.lua` 未在 dump 中，无法证实新版仍会塞。
+- 但设备版**原版小丑**的 `end_of_round` 分支用的是另一套判定（`card.lua:3280`）：
+  `if context.individual … elseif context.repetition … elseif not context.blueprint …`
+  —— 完全不看 `main_eval`。
+
+因此把 8 处守卫统一改为设备版原版同款，并保留我们自己的失败判定与 blueprint 保护：
+
+```lua
+if context.end_of_round and not context.game_over and not context.blueprint
+    and not context.individual and not context.repetition then
+```
+
+这套判定在两种情况下都成立：SMODS 塞 `main_eval` 时（小丑那次遍历既非 individual 也非 repetition），
+以及将来不再塞时。静态 lint 也放宽为「`main_eval` **或** `not individual + not repetition`」二者任一。
+
+### 28.2 附带修复：栏满时的反馈
+
+原来栏满时仍然返回「复制！」消息（生成在延迟事件里失败），玩家只看到消息、没有牌。
+现在**先同步检查栏位**：满则返回原版 `k_no_space_ex`（「没有空间！」），不浪费这次判定、不消耗 cap，
+也不显示误导性的成功消息。
+
+### 28.3 新增自动回归（249 项）
+
+- 不带 `main_eval` 的普通 `end_of_round` 上下文就能推进 `count`（1 → 2 → 3）
+- 第 3 回合产出 1 张负片小丑、`made` = 1
+- `loc_vars` 第 4 个变量是累计回合数、第 2 个是已生成张数（描述顺序锁定）
+- `individual` / `repetition` 子通过不重复触发；`game_over` 的失败回合不推进
+- 小丑栏满：不产出、不消耗 cap、返回非空提示；腾出位置后继续产出（`made` = 2）
+- 静态 lint：常规 `end_of_round` 分支必须有主通过判定（`main_eval` 或 `not individual/repetition`）
+
+### 28.4 仍需真机确认
+
+- 挂上生生不息后连续推进回合：描述里的「已积累 N 回合」应**每回合 +1**。
+- 第 3 回合若小丑栏有空位：应出现 1 张**负片**小丑，描述变「已积累 3 回合，已生成 1/3」。
+- 小丑栏满时：应弹出「没有空间！」，且不再显示误导性的「复制！」。
+- 同时确认其它 `end_of_round` 小丑（招灾 / 巧物 / 显灵 / 赝品 / 探囊 / 入梦 / 天行健 / 癫人）在真机上确实会触发。

@@ -161,7 +161,8 @@ SMODS.Joker {
         return { vars = { n, d, card.ability.extra.gain, card.ability.extra.mult } }
     end,
     calculate = function(self, card, context)
-        if context.end_of_round and context.main_eval and not context.game_over and not context.blueprint then
+        if context.end_of_round and not context.game_over and not context.blueprint
+            and not context.individual and not context.repetition then
             if SMODS.pseudorandom_probability(card, 'blh_zhaozai', 1, card.ability.extra.odds) then
                 local targets = {}
                 for _, c in ipairs(G.hand.cards) do targets[#targets + 1] = c end
@@ -231,7 +232,8 @@ SMODS.Joker {
         { 'At end of round, pay {C:money}$#1#{}', 'to create {C:attention}1{} random Tarot' }),
     loc_vars = function(self, iq, card) return { vars = { card.ability.extra.cost } } end,
     calculate = function(self, card, context)
-        if context.end_of_round and context.main_eval and not context.game_over and not context.blueprint then
+        if context.end_of_round and not context.game_over and not context.blueprint
+            and not context.individual and not context.repetition then
             if G.GAME.dollars >= card.ability.extra.cost and #G.consumeables.cards < G.consumeables.config.card_limit then
                 ease_dollars(-card.ability.extra.cost)
                 G.E_MANAGER:add_event(Event({ trigger = 'after', delay = 0.2, func = function()
@@ -259,7 +261,8 @@ SMODS.Joker {
         { '回合结束时，若手牌中有带{C:attention}蜡封{}的牌，', '生成 {C:attention}1{} 张随机幻灵牌' },
         { 'At end of round, if a card in hand has a {C:attention}Seal{},', 'create {C:attention}1{} random Spectral card' }),
     calculate = function(self, card, context)
-        if context.end_of_round and context.main_eval and not context.game_over and not context.blueprint then
+        if context.end_of_round and not context.game_over and not context.blueprint
+            and not context.individual and not context.repetition then
             local sealed = false
             for _, c in ipairs(G.hand.cards) do if c.seal then sealed = true break end end
             if sealed and #G.consumeables.cards < G.consumeables.config.card_limit then
@@ -309,7 +312,8 @@ SMODS.Joker {
     end,
     calculate = function(self, card, context)
         -- 回合结束只掷骰并挂起：此时往手牌塞牌会被回合重置清掉
-        if context.end_of_round and context.main_eval and not context.game_over and not context.blueprint then
+        if context.end_of_round and not context.game_over and not context.blueprint
+            and not context.individual and not context.repetition then
             if SMODS.pseudorandom_probability(card, 'blh_yanpin', 1, card.ability.extra.odds) then
                 card.ability.extra.pending = true
                 return { message = localize('k_duplicated_ex'), colour = G.C.MULT }
@@ -353,7 +357,8 @@ SMODS.Joker {
         { 'At end of round, pay {C:money}$#1#{}', 'to add a random Enhanced card from your deck to hand' }),
     loc_vars = function(self, iq, card) return { vars = { card.ability.extra.cost } } end,
     calculate = function(self, card, context)
-        if context.end_of_round and context.main_eval and not context.game_over and not context.blueprint then
+        if context.end_of_round and not context.game_over and not context.blueprint
+            and not context.individual and not context.repetition then
             if G.GAME.dollars < card.ability.extra.cost then return end
             ease_dollars(-card.ability.extra.cost)
             card.ability.extra.pending = true
@@ -393,7 +398,8 @@ SMODS.Joker {
         return { vars = { card.ability.extra.threshold, card.ability.extra.gain, card.ability.extra.mult } }
     end,
     calculate = function(self, card, context)
-        if context.end_of_round and context.main_eval and not context.game_over and not context.blueprint then
+        if context.end_of_round and not context.game_over and not context.blueprint
+            and not context.individual and not context.repetition then
             if G.GAME.dollars >= card.ability.extra.threshold then
                 card.ability.extra.mult = card.ability.extra.mult + card.ability.extra.gain
                 return { message = localize('k_upgrade_ex'), colour = G.C.MULT }
@@ -443,17 +449,27 @@ SMODS.Joker {
     key = 'sheng_sheng_bu_xi', discovered = true, atlas = 'blh_joker', pos = { x = 3, y = 2 }, rarity = 3, cost = 8,
     config = { extra = { every = 3, count = 0, made = 0, cap = 3 } },
     loc_txt = loc('生生不息-齐夏', 'Endless Creation - Qi Xia',
-        { '每 {C:attention}#1#{} 个回合生成 1 张随机{C:dark_edition}负片{}小丑牌', '{C:inactive}（本牌已生成 #2#/#3#）' },
-        { 'Every {C:attention}#1#{} rounds, create a random {C:dark_edition}Negative{} Joker', '{C:inactive}(Created #2#/#3#)' }),
+        { '每 {C:attention}#1#{} 个回合生成 1 张随机{C:dark_edition}负片{}小丑牌',
+          '{C:inactive}（已积累 #4# 回合，已生成 #2#/#3#）' },
+        { 'Every {C:attention}#1#{} rounds, create a random {C:dark_edition}Negative{} Joker',
+          '{C:inactive}(#4# rounds banked, created #2#/#3#)' }),
+    -- #4# 是累计回合数（每回合都变），#2# 只在真正生成时 +1：
+    -- 之前只显示 #2#，玩家推进回合看不到任何变化，会以为没生效
     loc_vars = function(self, iq, card)
-        return { vars = { card.ability.extra.every, card.ability.extra.made or 0, card.ability.extra.cap } }
+        local e = (card and card.ability and card.ability.extra) or self.config.extra
+        return { vars = { e.every, e.made or 0, e.cap, e.count or 0 } }
     end,
     calculate = function(self, card, context)
-        if context.end_of_round and context.main_eval and not context.game_over and not context.blueprint then
+        if context.end_of_round and not context.game_over and not context.blueprint
+            and not context.individual and not context.repetition then
             local extra = card.ability.extra
-            extra.count = extra.count + 1
+            extra.count = (extra.count or 0) + 1
             -- 每 every 个回合一次，且总产出不超过 cap（原用 count 差值判断，cap=3 时会产出 9 次）
             if extra.count % extra.every == 0 and (extra.made or 0) < extra.cap then
+                if not (G.jokers and #G.jokers.cards < G.jokers.config.card_limit) then
+                    -- 小丑栏已满：不消耗这次机会，但要说清原因，否则看起来像没生效
+                    return { message = localize('k_no_space_ex'), colour = G.C.RED }
+                end
                 G.E_MANAGER:add_event(Event({ trigger = 'after', delay = 0.3, func = function()
                     if G.jokers and #G.jokers.cards < G.jokers.config.card_limit then
                         local c = create_card('Joker', G.jokers, nil, nil, nil, nil, nil, 'blh_ssbx')
@@ -538,7 +554,8 @@ SMODS.Joker {
         return { vars = { n, d, card.ability.extra.count, card.ability.extra.cap } }
     end,
     calculate = function(self, card, context)
-        if context.end_of_round and context.main_eval and not context.game_over and not context.blueprint then
+        if context.end_of_round and not context.game_over and not context.blueprint
+            and not context.individual and not context.repetition then
             local extra = card.ability.extra
             if extra.count < extra.cap
                 and SMODS.pseudorandom_probability(card, 'blh_rumeng' .. tostring(extra.count), 1, extra.odds) then
