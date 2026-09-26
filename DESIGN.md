@@ -211,9 +211,49 @@
 
 ## 9. 版本 / 封印 / 贴纸
 
-- [x] 版本：回响（打出牌永久 +2 Mult）、清香（回合结束 +$3）、波纹（×1.2 Mult）、生肖（免疫 debuff）、神兽（击败 Boss 永久 +10 Chips +$5）；保留原版负片
-- [x] 封印：道印（回合结束在手 +15 道）、玉印（打出 +$3）、涡印（弃掉得 1 标签）、生肖印（再触发一次）、神兽印（击败 Boss 永久 +10 Chips）
-- [x] 贴纸：记忆保留（不可摧毁/出售）、深度回响化（每回合 +3 Mult，5 回合后失效）、原住民（每回合 -$3，+10 Mult）、蝼蚁（售价 $0，获得时 +$15）、面具（免疫 debuff，不可复制）
+> 早期表与本表不同（多数项与实现不符），**以本表为准**——它就是 `content/{editions,seals,stickers}.lua` 的实际实现，
+> 每个数值都有 `dev/test_blh.lua` 的行为断言（§33 审计：`== 版本 / 封印 / 贴纸 / 优惠券 行为与边界 ==`）。
+
+### 9.1 版本（5，替换原版 Foil / Holo / Polychrome，保留原版负片）
+
+| key | 名称 | 效果（实现） | shader |
+|---|---|---|---|
+| `blh_echo` | 回响 | 每打出 1 张**计分牌**本牌永久 +2 倍率；计分时返还累计值 | `foil` |
+| `blh_fragrance` | 清香 | 每张计分牌 +$1 | `holo` |
+| `blh_ripple` | 波纹 | 计分时 ×1.2 倍率 | `polychrome` |
+| `blh_zodiac` | 生肖 | 计分时 +30 筹码 | `hologram` |
+| `blh_beast` | 神兽 | 计分时 ×1.1 倍率，且每张计分牌 +$2 | `foil` |
+
+全部声明 `prefix_config = { shader = false }`（否则引擎按模组前缀找 `blh_foil` 之类不存在的 shader 会崩，见 §17），并带 `in_shop`/`weight`。
+
+### 9.2 封印（5，替换原版红/蓝/金/紫）
+
+| key | 名称 | 效果（实现） | 触发点 |
+|---|---|---|---|
+| `blh_dao` | 道印 | 打出时 +5 道 | `context.main_scoring` + 出牌区 |
+| `blh_yu` | 玉印 | 打出时 +$3 | `context.main_scoring` + 出牌区 |
+| `blh_wo` | 涡印 | 弃掉时生成 1 张随机塔罗（槽位满则不给，事件内二次复查） | `context.discard` |
+| `blh_zodiac` | 生肖印 | 打出时额外触发 1 次（`repetitions = 1`） | `context.repetition` |
+| `blh_beast` | 神兽印 | 打出时 +10 筹码、+$2 | `context.main_scoring` + 出牌区 |
+
+封印状态一律存在**卡牌自身**（`card.seal` / `card.ability.seal.*`），不使用任何全局状态。
+
+### 9.3 贴纸（5，仅在小丑上，且仅在挑战内启用）
+
+| key | 名称 | 效果（实现） | 说明 |
+|---|---|---|---|
+| `blh_memory` | 记忆保留 | 计分时 +10 筹码 | |
+| `blh_deep_echo` | 深度回响化 | 每次计分 +3 倍率，**最多叠加 5 层**（最高 +15） | 文案「最多叠加 5 次」现在真的参与计算 |
+| `blh_native` | 原住民 | 计分时 +12 倍率 | |
+| `blh_ant` | 蝼蚁 | 每张计分牌 +$1 | |
+| `blh_mask` | 面具 | 计分时 +8 倍率 | |
+
+5 张贴纸都声明 `sets = { Joker = true }` 与 `rate = 0.15`，并靠 `needs_enable_flag` 由挑战的
+`rules.custom` (`enable_blh_memory` … `enable_blh_mask`) 启用——**只在「终焉之地」里出现**（SMODS 判定：
+`G.GAME.modifiers['enable_'..key]`，见参考源码 `src/game_object.lua:3173`）。
+
+> 已知 WARN（不修）：三张固定数值贴纸（记忆保留/原住民/面具）在 `calculate` 里内联了数值，
+> `config` 只用于展示。数值一致、行为正确，但改 `config` 不会改效果。
 
 ## 10. 美术与图集
 

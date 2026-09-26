@@ -1380,4 +1380,135 @@ SMODS.current_mod.calculate(SMODS.current_mod, { setting_blind = true })
 eq('白虎：下一个盲注进场时被解除', G.GAME.blind.disabled, true)
 eq('白虎：标记已消费', G.GAME.blh_break_blind, nil)
 
+local function _type_tests()
+print('== 版本 / 封印 / 贴纸 / 优惠券 行为与边界 ==')
+local ed, sl, st, vc = {}, {}, {}, {}
+for _, e in ipairs(reg.editions) do ed[e.key] = e end
+for _, x in ipairs(reg.seals) do sl[x.key] = x end
+for _, x in ipairs(reg.stickers) do st[x.key] = x end
+for _, x in ipairs(reg.vouchers) do vc[x.key] = x end
+eq('版本数量', #reg.editions, 5)
+eq('封印数量', #reg.seals, 5)
+eq('贴纸数量', #reg.stickers, 5)
+eq('优惠券数量', #reg.vouchers, 16)
+
+-- ① 版本：注册前置条件（缺 shader / 没关 shader 前缀都会在注册期崩，见 §16/§17）
+local no_shader, bad_prefix = 0, 0
+for _, e in ipairs(reg.editions) do
+    if not e.shader then no_shader = no_shader + 1 end
+    if not (e.prefix_config and e.prefix_config.shader == false) then bad_prefix = bad_prefix + 1 end
+end
+eq('版本都声明了 shader', no_shader, 0)
+eq('版本都关闭了 shader 前缀（§17 崩溃根因）', bad_prefix, 0)
+
+-- ② 版本行为
+G.GAME = audit_game(); G.GAME.dollars = 0
+local ecard = { ability = { echo_mult = 0 } }
+ed.echo.calculate(ed.echo, ecard, { individual = true, cardarea = G.play })
+ed.echo.calculate(ed.echo, ecard, { individual = true, cardarea = G.play })
+eq('回响：两张计分牌累计 +4', ecard.ability.echo_mult, 4)
+eq('回响：joker_main 返回 +4 倍率', (ed.echo.calculate(ed.echo, ecard, { joker_main = true }) or {}).mult, 4)
+local ecard2 = { ability = { echo_mult = 0 } }
+ed.echo.calculate(ed.echo, ecard2, { individual = true, cardarea = G.hand })
+eq('回响：不在出牌区不计分（不成长）', ecard2.ability.echo_mult, 0)
+ed.fragrance.calculate(ed.fragrance, { ability = {} }, { individual = true, cardarea = G.play })
+eq('清香：每张计分牌 +$1', G.GAME.dollars, 1)
+eq('波纹：×1.2 倍率', (ed.ripple.calculate(ed.ripple, {}, { joker_main = true }) or {}).xmult, 1.2)
+eq('生肖：+30 筹码', (ed.zodiac.calculate(ed.zodiac, {}, { joker_main = true }) or {}).chips, 30)
+ed.beast.calculate(ed.beast, { ability = {} }, { individual = true, cardarea = G.play })
+eq('神兽：每张计分牌 +$2', G.GAME.dollars, 3)
+eq('神兽：×1.1 倍率', (ed.beast.calculate(ed.beast, {}, { joker_main = true }) or {}).xmult, 1.1)
+-- 版本必须带 in_shop / weight（否则不会出现在商店）
+local no_shop = 0
+for _, e in ipairs(reg.editions) do if e.in_shop ~= true or type(e.weight) ~= 'number' then no_shop = no_shop + 1 end end
+eq('版本都可进商店且有权重', no_shop, 0)
+
+-- ③ 封印行为
+G.GAME = audit_game(); G.GAME.dollars = 0
+local sc = { ability = { seal = { dollars = 3 } } }
+eq('玉印：打出 +$3', (sl.yu.calculate(sl.yu, sc, { main_scoring = true, cardarea = G.play }) or {}).dollars, 3)
+eq('玉印：实际入账', G.GAME.dollars, 3)
+G.GAME.dollars = 0
+local bc = { ability = { seal = { chips = 10, dollars = 2 } } }
+eq('神兽印：+10 筹码', (sl.beast.calculate(sl.beast, bc, { main_scoring = true, cardarea = G.play }) or {}).chips, 10)
+eq('神兽印：实际入账 +$2', G.GAME.dollars, 2)
+eq('生肖印：repetition 返回 repetitions=1', (sl.zodiac.calculate(sl.zodiac, { ability = { seal = {} } }, { repetition = true, cardarea = G.play }) or {}).repetitions, 1)
+do
+    local dcard = { ability = { seal = { dao = 15 } } }
+    local dret = sl.dao.calculate(sl.dao, dcard, { main_scoring = true, cardarea = G.play })
+    eq('道印：打出时返回给道提示', type(dret) == 'table', true)
+end
+-- 涡印：槽位满时不生成，有空位时生成 1 张
+G.GAME = audit_game()
+G.consumeables = { cards = {}, config = { card_limit = 0 }, emplace = function(self, c) table.insert(self.cards, c) end }
+eq('涡印：槽位满时不生成', sl.wo.calculate(sl.wo, {}, { discard = true }), nil)
+G.consumeables.config.card_limit = 2
+sl.wo.calculate(sl.wo, {}, { discard = true })
+eq('涡印：有空位时生成 1 张塔罗', #G.consumeables.cards, 1)
+-- 每个封印都必须有 badge_colour（UI 需要）
+local no_badge = 0
+for _, x in ipairs(reg.seals) do if not x.badge_colour then no_badge = no_badge + 1 end end
+eq('封印都有 badge_colour', no_badge, 0)
+
+-- ④ 贴纸行为
+G.GAME = audit_game(); G.GAME.dollars = 0
+eq('记忆保留：+10 筹码', (st.memory.calculate(st.memory, { ability = {} }, { joker_main = true }) or {}).chips, 10)
+eq('原住民：+12 倍率', (st.native.calculate(st.native, { ability = {} }, { joker_main = true }) or {}).mult, 12)
+eq('面具：+8 倍率', (st.mask.calculate(st.mask, { ability = {} }, { joker_main = true }) or {}).mult, 8)
+st.ant.calculate(st.ant, { ability = {} }, { individual = true, cardarea = G.play })
+eq('蝼蚁：每张计分牌 +$1', G.GAME.dollars, 1)
+-- 深度回响化：文案写"最多叠加 5 次"，必须真的叠加（原实现永远 +3）
+local dcard = { ability = {} }
+local m1 = (st.deep_echo.calculate(st.deep_echo, dcard, { joker_main = true }) or {}).mult
+local m2 = (st.deep_echo.calculate(st.deep_echo, dcard, { joker_main = true }) or {}).mult
+eq('深度回响化：第 1 次 +3', m1, 3)
+eq('深度回响化：第 2 次叠加到 +6', m2, 6)
+for _ = 3, 8 do st.deep_echo.calculate(st.deep_echo, dcard, { joker_main = true }) end
+eq('深度回响化：上限 5 层 = +15', (st.deep_echo.calculate(st.deep_echo, dcard, { joker_main = true }) or {}).mult, 15)
+-- 贴纸都必须声明 sets 与 rate（否则随机附着不会发生）
+local no_sets = 0
+for _, x in ipairs(reg.stickers) do if not x.sets or type(x.rate) ~= 'number' then no_sets = no_sets + 1 end end
+eq('贴纸都有 sets 与 rate', no_sets, 0)
+
+-- ⑤ 优惠券：每张 redeem 都必须真的改变状态；requires 链必须能解析
+local function snap()
+    return {
+        hands = G.GAME.round_resets.hands, discards = G.GAME.round_resets.discards,
+        reroll = G.GAME.round_resets.reroll_cost, hlim = G.hand.config.card_limit,
+        jlim = G.jokers.config.card_limit, clim = G.consumeables.config.card_limit,
+        jmax = G.GAME.shop and G.GAME.shop.joker_max or -1, dollars = G.GAME.dollars,
+    }
+end
+local unchanged = {}
+for _, v in ipairs(reg.vouchers) do
+    G.GAME = audit_game()
+    G.GAME.shop = { joker_max = 2 }
+    G.GAME.round_resets.reroll_cost = 5
+    G.GAME.base_reroll_cost = 5          -- 原版 init_game_object 会设置（桩需补齐）
+    G.hand.config.card_limit, G.jokers.config.card_limit, G.consumeables.config.card_limit = 8, 5, 2
+    local before = snap()
+    v.redeem(v, {})
+    local after = snap()
+    local diff = false
+    for k, val in pairs(before) do if after[k] ~= val then diff = true end end
+    if not diff then unchanged[#unchanged + 1] = v.key end
+end
+eq('每张优惠券的 redeem 都真的改变了状态' .. (#unchanged > 0 and (' [未生效: ' .. table.concat(unchanged, ',') .. ']') or ''), #unchanged, 0)
+local vkeys = {}
+for _, v in ipairs(reg.vouchers) do vkeys[v.key] = true end
+local bad_req = 0
+for _, v in ipairs(reg.vouchers) do
+    for _, r in ipairs(v.requires or {}) do
+        -- 真实运行时 requires 用完整 key（v_blh_xxx）；桩里的 key 不带 v_/blh_ 前缀
+        local bare = r:gsub('^v_', ''):gsub('^blh_', '')
+        if not (vkeys[r] or vkeys[bare]) then bad_req = bad_req + 1 end
+    end
+end
+eq('优惠券 requires 链都能解析到本模组优惠券', bad_req, 0)
+local no_cost = 0
+for _, v in ipairs(reg.vouchers) do if type(v.cost) ~= 'number' then no_cost = no_cost + 1 end end
+eq('优惠券都有 cost', no_cost, 0)
+end
+_type_tests()
+
 print(('ALL PASS (%d checks)'):format(passed))

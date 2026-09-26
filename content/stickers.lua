@@ -34,9 +34,11 @@ SMODS.Sticker {
     loc_vars = function(self, iq, card) return { vars = { 3, 5 } } end,
     calculate = function(self, card, context)
         if context.joker_main then
-            local hits = card.ability.blh_deep_echo_hits or 0
-            if hits < 5 then card.ability.blh_deep_echo_hits = hits + 1 end
-            return { mult = 3 }
+            -- 文案写「最多叠加 #2# 次」：每次计分 +3，累计到 5 次（最高 +15）。
+            -- 原实现只计数不参与计算，永远是 +3，计数器等于死状态。
+            local hits = math.min((card.ability.blh_deep_echo_hits or 0) + 1, 5)
+            card.ability.blh_deep_echo_hits = hits
+            return { mult = 3 * hits }
         end
     end,
 }

@@ -9,7 +9,7 @@
 | 设备版 Balatro + Steamodded 26.829.0 源码 dump | `/tmp/dump/dump/`（`game.lua`、`card.lua`、`blind.lua`、`cardarea.lua`、`functions/*.lua`、`SMODS/_/src/{game_object,overrides}.lua`） | 判定 Context / Hook / 生命周期是否真实存在 |
 | SMODS 参考源码 1.0.0-beta-1814a | `/Users/beiklive/Code/Other/Balatro2_mods/smods-1.0.0-beta-1814a`（`src/utils.lua` 等） | 设备版未 dump 的 SMODS 核心（`calculate_context`、`blueprint_effect`、`Blind:calculate`、`get_mods_scoring_targets`） |
 | 原版本地化 | `/Users/beiklive/Code/Other/Balatro_dev/game_original_files/localization/{zh_CN,en-us}.lua` | 术语与概率写法对齐 |
-| 自动回归 | `dev/test_blh.lua`（`luajit dev/test_blh.lua`，**283 项**） | 逐项行为断言 |
+| 自动回归 | `dev/test_blh.lua`（`luajit dev/test_blh.lua`，**318 项**） | 逐项行为断言（含版本/封印/贴纸/优惠券的行为与边界） |
 | 静态审计 | `dev/boundary_report.py`、`dev/canuse_audit.py` | 边界矩阵、消耗品可用性 |
 
 > 设备版 26.829.0 是**权威**；SMODS 参考源码仅用于设备版未 dump 的核心文件，凡依赖它的结论都标注 `[REF-ONLY]`。
@@ -28,7 +28,7 @@
 | Edition | 5 | 5 | 0 | 0 | 0 |
 | Tag | 16 | 12 | 4 | 0 | 0 |
 | Blind | 12 | 12 | 0 | 0 | 0 |
-| Sticker | 5 | 5 | 0 | 0 | 0 |
+| Sticker | 5 | 4 | 1 | 0 | 0 |
 | **合计** | **120** | **111** | **8** | **1** | **0** |
 
 计数口径：FAIL = 承诺的效果不存在或必然丢失；WARN = 功能可用但存在时机/文案/兼容性问题（本报告 §3–§5 逐条列出，**本轮已全部修复**，表内为修复前判定）。
@@ -139,6 +139,7 @@
 | 9 | 生生不息 | 描述只显示"已生成张数"（每 3 回合且栏位有空位才 +1）→ 推进回合看不到任何变化 | 玩家误判"没生效" | FIXED（v2.3.5：显示「已积累 N 回合 / 已生成 X/3」；栏满给提示） |
 | 10 | 全部 `end_of_round` 小丑（8 处） | 守卫依赖 SMODS 内部塞的 `context.main_eval`；设备版原版用的是 `not individual/not repetition` | 若 SMODS 不再塞，8 个回合结束效果全灭 | FIXED（改为设备版原版同款判定，两种都成立） |
 | 11 | 盲注：地猴弃牌 / 天龙天秤 | 效果挂在 `blind.calculate` 上 | 依赖 SMODS 核心（未 dump）的实现细节 | FIXED（改用原版就有分派点的 `press_play` / `modify_hand`） |
+| 12 | 深度回响化（贴纸） | 文案「最多叠加 5 次」，代码只把计数器封顶、永远返回 +3 → 计数器是死状态，叠加不存在 | 描述与实现不符 | FIXED（改为 `+3 × 层数`，封顶 5 层 = +15，并有断言） |
 
 ---
 
@@ -148,7 +149,8 @@
 |---|---|---|---|
 | 1 | 全局 | `function SMODS.blh_add_dao(n)` 污染 SMODS 命名空间（且无调用点） | FIXED（删除，内容文件直接用 `BLH.add_dao`） |
 | 2 | 塔罗 / 幻灵 | 描述缺少使用条件与边界（并列取色顺序、点数上限、永久加成、覆盖强化、Boss 盲注不可用…） | FIXED（§27：17 张塔罗 + 4 神兽 + 5 幻灵） |
-| 3 | 设计文档 | §4/§5/§8 与实现不一致（盲注 8/12 项、勾城·契约"通关时"、索城·索引"指定点数"） | FIXED（按实现重写） |
+| 3 | 设计文档 | §4/§5/§8 与实现不一致（盲注 8/12 项、勾城·契约"通关时"、索城·索引"指定点数"）；**§9 版本/封印/贴纸表约 80% 与实现不符**（例如"生肖＝免疫 debuff"实际是 +30 筹码、"涡印＝得标签"实际是生成塔罗） | FIXED（§4/§5/§8/§9 全部按实现重写） |
+| 3b | 贴纸 | 记忆保留/原住民/面具在 `calculate` 里内联数值，`config` 只用于展示（改 config 不改效果） | 保留（数值一致、行为正确；属可维护性 WARN） |
 | 4 | 地鸡·兵器牌 | 「随机强化牌」未枚举池（实现是 8 种原版强化） | 保留（池在游戏内可见），如需更精确可枚举 |
 | 5 | 美术 | 塔罗/幻灵卡面没有印使用条件（只影响描述面板） | 保留（美术范畴，见 README） |
 | 6 | 音频 | 零新增音效/BGM | 保留（见 README「声音素材不足」） |
@@ -256,8 +258,10 @@
 - **Condition**：26 张消耗品的 `can_use` 覆盖其 `use` 依赖的资源（`dev/canuse_audit.py` 26/26）
 - **Action / State**：所有状态字段要么随回合复位（`count`/`pending`/`discarded`/`rnd`），要么是设计上的永久成长（`mult`/`made`），要么借用原版存档字段（`hands_sub`/`discards_sub`）
 - **Boundary**：见 §8
-- **文案**：283 项回归中包含"每个消耗品必须有条件行 / `loc_vars` 变量必须被使用 / 中文不得残留英文 / 数值段必须带单位"
+- **文案**：318 项回归中包含"每个消耗品必须有条件行 / `loc_vars` 变量必须被使用 / 中文不得残留英文 / 数值段必须带单位"
 - **兼容性**：Blueprint（计分类兼容、永久成长类按原版惯例跳过）、Retrigger（`repetition` 已排除）、Debuff（引擎行为）、Copy（`set_ability`/`copy_card` 保留强化与版本）
+- **版本 / 封印 / 贴纸 / 优惠券**（规范 §VII/§X/§XI/§XIV）：本轮补齐行为验证——5 个版本的 shader 与计分/成长断言；
+  5 个封印的触发点与槽位边界；5 张贴纸的数值与叠加上限；16 张优惠券 `redeem` 逐张「必须真的改变状态」+ `requires` 链可解析
 
 ---
 
@@ -289,8 +293,8 @@
 
 | 检查项 | 结果 | 证据 |
 |---|---|---|
-| 修改是否解决原问题 | 是 | 283 项回归中新增 30+ 项针对本轮修复的断言全部通过 |
-| 是否引入新问题 | 否 | 全量 `luajit -bl` 语法检查通过；283/283 通过 |
+| 修改是否解决原问题 | 是 | 318 项回归中新增 30+ 项针对本轮修复的断言全部通过 |
+| 是否引入新问题 | 否 | 全量 `luajit -bl` 语法检查通过；318/318 通过 |
 | 是否破坏其他卡牌 | 否 | 旧断言（探囊"回合结束扣钱"）已按新语义同步更新，其余断言未改 |
 | 是否破坏公共机制 | 否 | `mod.calculate` 新增 `setting_blind` 分支，`end_of_round` 分支行为不变（测试覆盖免死/复位） |
 | 是否改变描述 | 是（有意） | 6 处文案对齐 + 2 个新本地化键，中英同步 |
@@ -298,6 +302,8 @@
 | Blueprint | 保持兼容 | 计分类去掉了多余的守卫；永久成长类仍按原版惯例跳过 |
 | Retrigger | 无影响 | `repetition` 子通过仍被排除 |
 | Save / Load | 无回归 | 状态仍落在 `G.GAME` / `ability.extra` / 原版存档字段上 |
+| 新增测试是否覆盖四类对象 | 是 | 版本/封印/贴纸/优惠券 新增 41 项行为断言（283 → 318） |
+| 深度回响化叠加是否引入新问题 | 否 | 仅改返回值与计数逻辑；`card.ability.blh_deep_echo_hits` 仍在卡牌自身、随存档 |
 | 静态审计 | 全绿 | `dev/boundary_report.py` 0 告警、`dev/canuse_audit.py` 26/26、中文文案 0 英文残留、SMODS 命名空间 0 污染 |
 
 ---
