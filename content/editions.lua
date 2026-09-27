@@ -15,6 +15,8 @@ end
 -- :3751（polychrome，post_joker 或 main_scoring）。标准补充包会给扑克牌 roll 版本（card.lua:2103-2105），
 -- 而版本池 cull 只看 in_shop（functions/common_events.lua:2271-2272）→ 本模组的版本也会落在扑克牌上，
 -- 只认 pre/post_joker 会完全失效。
+-- 小丑侧不会因此 double-dip：主计分在调用 calculate_card_areas('jokers', ...) 之前就把 context.main_scoring
+-- 置回 nil（设备版 SMODS/src/utils.lua 未 dump，两份参考源码一致：1814a utils.lua:2098-2107、0711a utils.lua:1872-1881）[REF-ONLY]
 local function before_score(context)
     return context.pre_joker or (context.main_scoring and context.cardarea == G.play)
 end

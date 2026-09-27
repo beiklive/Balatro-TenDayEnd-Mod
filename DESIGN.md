@@ -1094,6 +1094,8 @@ local function after_score(context)  return context.post_joker or (context.main_
 ```
 
 - 「神兽」在扑克牌上两个条件同时成立，必须**合并返回** `{xmult, dollars}`，否则先 return 的分支会吃掉另一段。
+- 小丑侧不会因此 double-dip：主计分在 `calculate_card_areas('jokers', ...)` 之前把 `context.main_scoring` 置回 nil。
+  设备版 `SMODS/src/utils.lua` 未 dump，此条以两份参考源码为准（1814a `utils.lua:2098-2107`、0711a `utils.lua:1872-1881`）→ **[REF-ONLY]**。
 - 回响的成长只在 `before_score` 且非 `context.blueprint` 时写入（蓝复制不复制永久成长）。
 - 文案从「每张计分牌」统一改为「每次出牌」（小丑上确实每手只结算一次；扑克牌上按计分结算）。
 
