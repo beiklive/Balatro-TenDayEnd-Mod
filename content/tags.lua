@@ -3,7 +3,6 @@
 
 SMODS.Atlas { key = 'blh_tag', path = 'blh_tag.png', px = 34, py = 34 }
 
-local BLH = SMODS.current_mod.blh
 
 local function loc(zh_name, en_name, zh_text, en_text)
     return { ['zh_CN'] = { name = zh_name, text = zh_text }, ['en-us'] = { name = en_name, text = en_text } }
@@ -77,17 +76,17 @@ local function add_consumable(set, key, seed)
     G.consumeables:emplace(card)
 end
 
--- 鼠·寻道：直接给道（跳过流路线）
+-- 鼠·寻金（原「鼠·寻道」）：直接给钱
 SMODS.Tag {
     key = 'rat_dao', atlas = 'blh_tag', pos = { x = 0, y = 0 }, min_ante = 1,
-    config = { type = 'immediate', dao = 40 },
-    loc_txt = loc('鼠·寻道', 'Rat: Dao Seek',
-        { '立即获得 {C:money}#1#{} 道' }, { 'Immediately gain {C:money}#1#{} Dao' }),
-    loc_vars = function(self, iq, card) return { vars = { self.config.dao } } end,
+    config = { type = 'immediate', dollars = 8 },
+    loc_txt = loc('鼠·寻金', 'Rat: Gold Seek',
+        { '立即获得 {C:money}$#1#{}' }, { 'Immediately gain {C:money}$#1#{}' }),
+    loc_vars = function(self, iq, card) return { vars = { self.config.dollars } } end,
     apply = function(self, tag, context)
         if context.type ~= 'immediate' then return end
         tag:yep('+', G.C.GOLD, function() return true end)
-        BLH.add_dao(self.config.dao)
+        ease_dollars(self.config.dollars)
         tag.triggered = true
         return true
     end,
@@ -202,20 +201,20 @@ SMODS.Tag {
     end,
 }
 
--- 马·竞速：按已出牌数给道
+-- 马·竞速：按已出牌数给钱
 SMODS.Tag {
     key = 'horse_speed', atlas = 'blh_tag', pos = { x = 6, y = 0 },
-    config = { type = 'immediate', dao_per_hand = 2 },
+    config = { type = 'immediate', dollars_per_hand = 1 },
     loc_txt = loc('马·竞速', 'Horse: Race',
-        { '本局每打出过 {C:attention}1{} 次牌型获得 {C:money}#1#{} 道' },
-        { 'Gain {C:money}#1#{} Dao for each hand you have played this run' }),
-    loc_vars = function(self, iq, card) return { vars = { self.config.dao_per_hand } } end,
+        { '本局每打出过 {C:attention}1{} 次牌型获得 {C:money}$#1#{}' },
+        { 'Gain {C:money}$#1#{} for each hand you have played this run' }),
+    loc_vars = function(self, iq, card) return { vars = { self.config.dollars_per_hand } } end,
     apply = function(self, tag, context)
         if context.type ~= 'immediate' then return end
         tag:yep('+', G.C.GOLD, function() return true end)
         local plays = 0
         for _, v in pairs(G.GAME.hands or {}) do plays = plays + (v.played or 0) end
-        BLH.add_dao(plays * self.config.dao_per_hand)
+        ease_dollars(plays * self.config.dollars_per_hand)
         tag.triggered = true
         return true
     end,

@@ -25,7 +25,6 @@ return {
             blh_msg_immune = '免疫',
             blh_msg_nopick = '牌堆没有强化牌',
             blh_msg_nomoney = '金钱不足',
-            blh_dao_name = '道',
             blh_gamble_ex = '赌命！',
             blh_bumie_ex = '不灭！',
             blh_dragon_descend = '天龙降临',
@@ -43,7 +42,7 @@ return {
             beiklive_helper = {
                 name = 'beiklive助手',
                 text = {
-                    '十日终焉主题：道经济 + 终焉之地挑战',
+                    '十日终焉主题：终焉之地挑战 + 金钱奖励',
                     '30 回响小丑 / 21 塔罗 / 10 幻灵',
                     '16 优惠券 / 16 标签 / 12 生肖盲注',
                 },

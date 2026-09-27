@@ -133,7 +133,7 @@ local pig_scale = once_effect('pig', function(self)
     b.chip_text = number_format(b.chips)
 end)
 
--- 天龙：每 500 道，强度 +10%
+-- 天龙：每持有 $25（BLH.DRAGON_PER），强度 +10%
 local dragon_scale = once_effect('dragon', function(self)
     local b = blind_ref()
     if not b or not b.chips then return end
@@ -307,9 +307,9 @@ SMODS.Blind {
     boss_colour = HEX('B03A3A'),
     mult = 2.5, dollars = 12,
     loc_txt = loc('天龙·天秤游戏', 'Dragon: The Scale',
-        { '天秤两端失衡时，你的计分 {C:red}×0.5{}', '你持有的{C:attention}道{}越多，天龙越强' },
-        { 'When the scales tip, your scoring is {C:red}×0.5{}', 'The more {C:attention}Dao{} you hold, the stronger it gets' }),
-    -- 反刷：每 500 道，天龙强度 +10%（dragon_scale）
+        { '天秤两端失衡时，你的计分 {C:red}×0.5{}', '你持有的{C:money}金钱{}越多，天龙越强' },
+        { 'When the scales tip, your scoring is {C:red}×0.5{}', 'The more {C:money}money{} you hold, the stronger it gets' }),
+    -- 反刷：持有金钱越多天龙越强（dragon_scale → BLH.dragon_mult）
     set_blind = dragon_scale.set_blind,
     disable = dragon_scale.disable,
     defeat = dragon_scale.defeat,

@@ -1,6 +1,6 @@
 # 终焉之地 · beiklive助手 — 最终审计报告
 
-审计对象：`beiklive_helper` v2.4.0（120 个对象：小丑 30 / 优惠券 16 / 塔罗 21 / 幻灵 10 / 封印 5 / 版本 5 / 标签 16 / 盲注 12 / 贴纸 5）
+审计对象：`beiklive_helper` v2.4.1（120 个对象：小丑 30 / 优惠券 16 / 塔罗 21 / 幻灵 10 / 封印 5 / 版本 5 / 标签 16 / 盲注 12 / 贴纸 5）
 
 审计基准（**所有结论都必须能落到这些文件的行号上**）：
 
@@ -9,7 +9,7 @@
 | 设备版 Balatro + Steamodded 26.829.0 源码 dump | `/tmp/dump/dump/`（`game.lua`、`card.lua`、`blind.lua`、`cardarea.lua`、`functions/*.lua`、`SMODS/_/src/{game_object,overrides}.lua`） | 判定 Context / Hook / 生命周期是否真实存在 |
 | SMODS 参考源码 1.0.0-beta-1814a | `/Users/beiklive/Code/Other/Balatro2_mods/smods-1.0.0-beta-1814a`（`src/utils.lua` 等） | 设备版未 dump 的 SMODS 核心（`calculate_context`、`blueprint_effect`、`Blind:calculate`、`get_mods_scoring_targets`） |
 | 原版本地化 | `/Users/beiklive/Code/Other/Balatro_dev/game_original_files/localization/{zh_CN,en-us}.lua` | 术语与概率写法对齐 |
-| 自动回归 | `dev/test_blh.lua`（`luajit dev/test_blh.lua`，**374 项**） | 逐项行为断言（含版本/封印/贴纸/优惠券的行为与边界） |
+| 自动回归 | `dev/test_blh.lua`（`luajit dev/test_blh.lua`，**387 项**） | 逐项行为断言（含版本/封印/贴纸/优惠券的行为与边界） |
 | 静态审计 | `dev/boundary_report.py`、`dev/canuse_audit.py` | 边界矩阵、消耗品可用性 |
 
 > 设备版 26.829.0 是**权威**；SMODS 参考源码仅用于设备版未 dump 的核心文件，凡依赖它的结论都标注 `[REF-ONLY]`。
@@ -243,7 +243,7 @@
 | Risk / Reward · Gamble | 祸水、猪·黑白棋子、强运、激发 | 低 | 高倍率 / 概率提升 | 失败有惩罚（盲注需求 +5%、变黑桃） | 每次计分 / 使用 | PASS（概率写法统一为 `#1#/#2#`） |
 | Utility / Tempo | 破万法、跃迁、夺心魄、传音、挪移 | 中 | 出牌次数/操作性 | 有条件 | 回合内 | PASS（跃迁上限已改为每回合） |
 | Defensive | 忘忧、不灭、嫁祸、替罪 | 中 | 免死/免疫/转嫁 | 有代价（×0.8 / -1 手牌上限） | 一次性或持续 | PASS（忘忧免疫本轮补齐，代价清晰） |
-| Endgame / Boss-like | 天龙（showdown）、天猪 | — | 终局挑战 | 强度随道提升 | 第 10 天 | PASS（`win_ante=10` 已修，showdown 只在天 10） |
+| Endgame / Boss-like | 天龙（showdown）、天猪 | — | 终局挑战 | 强度随持有金钱提升 | 第 10 天 | PASS（`win_ante=10` 已修，showdown 只在天 10） |
 
 **无"实现漏洞型超模"**：本轮把三处"因为条件写错而变成无限/白拿"的问题修掉（跃迁上限、牛/兔标签、探囊白扣钱）。
 存在的强项（生生不息负片小丑、双生花扩散、天龙 ×0.5）都有明确 cap / 代价 / 触发频率，属设计意图，不做削弱。
@@ -366,7 +366,7 @@
 
 | 对象 | WARN | 决定 |
 |---|---|---|
-| 道印封印 / 鼠·寻道 / 马·竞速 标签 | 普通局（非挑战）也会从池里出现，此时"道"无 HUD，玩家看不到 | 保留：道是本模组的独立资源，模组内容本就允许在普通局出现；若需"只在挑战内出现"，改 `in_pool`/池过滤（当前 SMODS 对 Seal 无 `in_pool` 支持，需改池重建） |
+| ~~道印封印 / 鼠·寻道 / 马·竞速 标签~~ | ~~普通局（非挑战）也会从池里出现，此时"道"无 HUD，玩家看不到~~ | **已随 v2.4.1 移除「道」而消失**（见 §16）：这三个现在给的是钱，普通局也看得见 |
 | 面具（优惠券）强度 | −$1 弱于原版 reroll 券的 −$2 | 保留：本模组 8 组券的整体曲线按 10 天预算设计 |
 | 猪·博弈（标签） | 期望 +25% 金钱、无成本 | 保留：设计原型就是 Gamble |
 | 玄武·公正（标签） | 一次免死 = 可救整局 | 保留：这是该标签的唯一设计目的（且是"充能"不是"无限免死"，用掉即消耗） |
@@ -472,8 +472,55 @@
 ### 15.7 最终二次审计（v2.4.0，含对抗性复核修复后）
 
 - 语法：`for f in content/*.lua systems/*.lua main.lua localization/*.lua; do luajit -bl "$f"; done` → 全绿
-- 行为：`luajit dev/test_blh.lua` → **374/374（ALL PASS）**，exit code 0
+- 行为：`luajit dev/test_blh.lua` → 374/374（该轮数字，后续 §16 变更后为 387）
 - 静态：`python3 dev/boundary_report.py` → 虚拟告警 **0**；`python3 dev/canuse_audit.py` → 26 个对象，25 项 OK，1 项为既有误报（`mirror`「缺检查: 牌堆」）
 - 交叉复核：`grep -n "context.joker_main" content/editions.lua` → 无命中；`grep -c "^local BLH" content/spectrals.lua` → 1；`grep -n "has_no_rank" content/spectrals.lua` → 4（两处循环各 2 次）
 - 版本字段：`beiklive_helper.json` = 2.4.0；`main.lua` `mod.debug_info.version` = v2.4.0
 - 仍未处理且已记录的 WARN：反物质零成本全屏负片、猪·博弈 EV +25%、玄武·公正 1 次免死、3 张固定数值贴纸、涡城/索城绕过 `draw_card`、玉城 `Card:use_consumeable` monkey-patch、版本 `get_weight` 不乘 `edition_rate`、`use` 不复查 `can_use` 的覆盖缺口
+
+---
+
+## 16. 需求变更记录：移除「道」，奖励改为金钱（v2.4.0 → v2.4.1）
+
+**不是缺陷修复，是用户决策**：真机上自绘的「道」HUD 显示不出来 → 奖励不可见、也不可用。
+用户选择「移除道概念，直接改成钱」，并确认数值按金钱经济缩放、三项依赖机制全部保留。
+
+### 16.1 变更范围
+
+| 层 | 原 | 现 | 证据/理由 |
+|---|---|---|---|
+| 货币 | `G.GAME.blh_dao` + `BLH.dao()/add_dao()` + 自绘 HUD | `G.GAME.dollars` + `ease_dollars` + 原版 HUD | 原版 HUD 恒在，「显示不出来」的根因（自绘 `create_UIBox_HUD` 补丁）直接消失 |
+| 产出 | 小 `10+5×天` / 大 `20+8×天` / Boss 80·130·200·400 / 十天 2575 | 小 `3+⌊天/2⌋` / 大 `5+天` / Boss 12·20·30·50 / 十天 **386** | 原版金钱稀缺度远高于道（起始 $4、盲注自带 $3~5、券 $10 级）；1:1 会让一次 Boss 奖励超过整局收入 |
+| 出牌/弃牌奖励 | ×4 / ×3 道 | 各 ×$1 | 同上 |
+| 超额倍率 | ×1.0/1.1/1.25/1.4 | 不变 | 设计意图（性能奖励封顶）不变 |
+| 赌命 | 500 / 800 / 1200 道 | $20 / $35 / $55 | $500 在原版金钱下不可能攒到 = 机制死掉 |
+| 天龙反刷 | 每 500 道 +10% | 每 $25 +10%（不设上限） | 保持"钱越多越难"的意图；配合提前结局阈值 |
+| 提前结局 | 道 ≥ 3600 | 持有金钱 ≥ $250 | 按同一比例（≈1/8）折算 |
+| 道印（封印） | +5 道/张 | **财印**：+$2/张（key 仍 `blh_dao`） | key 不变以免重置存档发现度；数值取"比玉印 $3 弱一档" |
+| 鼠·寻道（标签） | +40 道 | **鼠·寻金**：立即 +$8 | 同上 |
+| 马·竞速（标签） | +2 道/牌型 | +$1/牌型 | 同上 |
+| 勾城·契约（幻灵） | 盲注金钱奖励 ×2（原为道 ×2） | 不变（现在乘以金钱奖励） | 文案同步 |
+
+### 16.2 关闭的既有 WARN
+
+`§14.3` 的「道印 / 鼠·寻道 / 马·竞速 在普通局没有任何 HUD 反馈」随本次变更**自然消失**：
+三个对象现在给的是钱，普通局同样可见。
+
+### 16.3 顺带修掉的 P0（本次改动中发现）
+
+`BLH.settle_blind` 原本用 `blind.blh_settled = true` 做幂等标记，但 **`G.GAME.blind` 整局只创建一次**
+（device `game.lua:2522`，`start_run` 里 `Blind(0,0,2,1)`），而 `Blind:set_blind`（`blind.lua:99-135`）
+只重置固定字段、**不会清自定义字段** → 标记跨盲注残留 → **第 2 个盲注起再也不发奖励**（原来发的是道，同样只发一次）。
+另外该字段不随存档保存（`blind.lua:774` 的 `Blind:save` 只存固定字段），读档后重复 `defeat` 会重复发。
+
+修复：标记改记在 `G.GAME.blh_settled`，键为 `ante:盲注key`（无 key 时退回 `ante:类型`），
+既按盲注区分、又随 G.GAME 存档保留；`init_game_object` 里初始化为 `{}`。
+
+### 16.4 复核
+
+- 语法全绿；`luajit dev/test_blh.lua` → **387/387（ALL PASS）**
+- `grep -rn "add_dao\|BLH.dao()\|blh_dao_name" content/ systems/ main.lua localization/` → **0 命中**
+- `BLH.dao` / `BLH.add_dao` 已不存在（回归显式断言，防止有人再往旧 API 写）
+- 保留的「道」字样均为非货币专名：五城地名「道城·轮回」、塔罗「鼠·仓库寻道」「猴·箱中道」、
+  盲注「人鼠·仓库寻道」「地猴·箱中道」
+- 版本 2.4.0 → **2.4.1**

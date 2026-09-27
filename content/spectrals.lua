@@ -279,15 +279,15 @@ SMODS.Consumable {
     key = 'goucheng_pact', set = 'Spectral', atlas = 'blh_spectral', pos = { x = 3, y = 1 }, cost = 4, discovered = true,
     config = { extra = { penalty = 0.5, reward = 2 } },
     loc_txt = loc('勾城·契约', 'Goucheng: Contract',
-        { '与本盲注签约：所需分数 {C:red}+#1#{}', '击败该盲注时，获得的{C:attention}道{} {C:money}×#2#{}', '{C:inactive}（只能在小盲注 / 大盲注使用，Boss 盲注不可用；同一盲注只能签一次）' },
-        { 'Sign a contract with this Blind: it needs {C:red}+#1#{} score', 'defeating it grants {C:money}×#2#{} the usual {C:attention}Dao{}', '{C:inactive}(only on Small / Big Blinds, not Boss; once per Blind)' }),
+        { '与本盲注签约：所需分数 {C:red}+#1#{}', '击败该盲注时的{C:money}金钱{}奖励 {C:money}×#2#{}', '{C:inactive}（只能在小盲注 / 大盲注使用，Boss 盲注不可用；同一盲注只能签一次）' },
+        { 'Sign a contract with this Blind: it needs {C:red}+#1#{} score', 'defeating it multiplies the {C:money}money{} reward by {C:money}×#2#{}', '{C:inactive}(only on Small / Big Blinds, not Boss; once per Blind)' }),
     loc_vars = function(self, iq)
         return { vars = { tostring(self.config.extra.penalty * 100) .. '%', self.config.extra.reward } }
     end,
     -- 必须"盲注进行中"（blind.in_blind）：进入盲注时 blind.lua:188 置真，
     -- 回合结束 end_round()（state_events.lua:95）置回 false → 商店里 G.GAME.blind 仍是已击败且 in_blind=false 的盲注，
     -- 签约会把 +50% 打在死盲注上、奖励永不匹配 = $4 白费。
-    -- 并限定本模式：奖励只在挑战内按「道」结算（economy.lua），普通局抽到是纯自伤。
+    -- 并限定本模式：只有挑战内才由 mod 结算击败盲注的金钱奖励（economy.lua），普通局抽到是纯自伤。
     can_use = function(self, card)
         if not (G.GAME ~= nil and G.GAME.blind ~= nil and G.GAME.blind.in_blind == true) then return false end
         if G.GAME.blind.boss or BLH.in_challenge() ~= true then return false end

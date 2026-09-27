@@ -3,23 +3,21 @@
 
 SMODS.Atlas { key = 'blh_seal', path = 'blh_seal.png', px = 71, py = 95 }
 
-local BLH = SMODS.current_mod.blh
-
 local function loc(zh_name, en_name, zh_text, en_text)
     return { ['zh_CN'] = { label = zh_name, name = zh_name, text = zh_text },
              ['en-us'] = { label = en_name, name = en_name, text = en_text } }
 end
 
--- 道印：打出时给道
+-- 财印（原「道印」）：打出时给钱
+-- 「道」已并入金钱，所以这里也改走原版 dollars 通道（只 return，不再手调 ease_dollars）
 SMODS.Seal {
     key = 'dao', atlas = 'blh_seal', pos = { x = 0, y = 0 }, badge_colour = HEX('d9b24a'),
-    config = { dao = 5 },
-    loc_txt = loc('道印', 'Dao Seal', { '打出时获得 {C:money}#1#{} 道' }, { 'Gain {C:money}#1#{} Dao when played' }),
-    loc_vars = function(self, iq, card) return { vars = { card.ability.seal.dao } } end,
+    config = { dollars = 2 },
+    loc_txt = loc('财印', 'Wealth Seal', { '打出时获得 {C:money}$#1#{}' }, { 'Gain {C:money}$#1#{} when played' }),
+    loc_vars = function(self, iq, card) return { vars = { card.ability.seal.dollars } } end,
     calculate = function(self, card, context)
         if context.main_scoring and context.cardarea == G.play then
-            BLH.add_dao(card.ability.seal.dao)
-            return { message = '+' .. card.ability.seal.dao .. ' ' .. localize('blh_dao_name'), colour = G.C.GOLD }
+            return { dollars = card.ability.seal.dollars }
         end
     end,
 }

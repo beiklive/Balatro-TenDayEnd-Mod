@@ -25,7 +25,6 @@ return {
             blh_msg_immune = 'Immune',
             blh_msg_nopick = 'No Enhanced card in deck',
             blh_msg_nomoney = 'Not enough money',
-            blh_dao_name = 'Dao',
             blh_gamble_ex = 'GAMBLED!',
             blh_bumie_ex = 'IMMORTAL!',
             blh_dragon_descend = 'THE DRAGON DESCENDS',
@@ -43,7 +42,7 @@ return {
             beiklive_helper = {
                 name = 'beiklive Helper',
                 text = {
-                    'Ten Day Ultimatum theme: Dao economy + themed Challenge',
+                    'Ten Day Ultimatum theme: themed Challenge + money rewards',
                     '30 Echo Jokers / 21 Tarots / 10 Spectrals',
                     '16 Vouchers / 16 Tags / 12 Zodiac Bosses',
                 },

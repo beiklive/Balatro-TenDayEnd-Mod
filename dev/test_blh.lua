@@ -234,32 +234,72 @@ for _, b in ipairs(reg.blinds) do
 end
 eq('盲注：y 选行动画，x 固定 0（12 行不重复）', ok_b, true)
 
-print('== 道 经济公式 ==')
-eq('小盲注 天1', BLH.small_reward(1), 15)
-eq('大盲注 天10', BLH.big_reward(10), 100)
-eq('Boss 人级', BLH.boss_reward(2), 80)
-eq('Boss 地级', BLH.boss_reward(5), 130)
-eq('Boss 天级', BLH.boss_reward(9), 200)
-eq('天龙', BLH.boss_reward(10), 400)
+print('== 金钱 经济公式 ==')
+eq('小盲注 天1', BLH.small_reward(1), 3)
+eq('小盲注 天10', BLH.small_reward(10), 8)
+eq('大盲注 天1', BLH.big_reward(1), 6)
+eq('大盲注 天10', BLH.big_reward(10), 15)
+eq('Boss 人级', BLH.boss_reward(2), 12)
+eq('Boss 地级', BLH.boss_reward(5), 20)
+eq('Boss 天级', BLH.boss_reward(9), 30)
+eq('天龙', BLH.boss_reward(10), 50)
 local total = 0
 for d = 1, 10 do total = total + BLH.small_reward(d) + BLH.big_reward(d) end
-total = total + 80 * 3 + 130 * 4 + 200 * 2 + 400
-eq('十天基础道总量', total, 2575)
+total = total + 12 * 3 + 20 * 4 + 30 * 2 + 50
+eq('十天基础金钱总量', total, 386)
 eq('超额 1.4x 无加成', BLH.overkill_mult(1.4), 1.0)
 eq('超额 2x', BLH.overkill_mult(2), 1.1)
 eq('超额 4x', BLH.overkill_mult(4), 1.25)
 eq('超额 8x 封顶', BLH.overkill_mult(8), 1.4)
-eq('赌命第1次', BLH.GAMBLE_COST[1], 500)
-eq('赌命第3次', BLH.GAMBLE_COST[3], 1200)
-eq('提前结局阈值', BLH.EARLY_DAO, 3600)
+eq('赌命第1次', BLH.GAMBLE_COST[1], 20)
+eq('赌命第3次', BLH.GAMBLE_COST[3], 55)
+eq('提前结局阈值', BLH.EARLY_MONEY, 250)
+eq('天龙缩放步长', BLH.DRAGON_PER, 25)
+eq('道 API 已移除（只保留金钱）', BLH.dao == nil and BLH.add_dao == nil, true)
 
-print('== 天龙反刷 ==')
-G.GAME = { blh_dao = 0 }
-eq('0 道 → ×1.0', BLH.dragon_mult(), 1.0)
-G.GAME.blh_dao = 500
-eq('500 道 → ×1.1', math.floor(BLH.dragon_mult() * 10 + 0.5) / 10, 1.1)
-G.GAME.blh_dao = 3600
-eq('3600 道 → ×1.7', math.floor(BLH.dragon_mult() * 10 + 0.5) / 10, 1.7)
+print('== 天龙反刷（随持有金钱） ==')
+G.GAME = { dollars = 0 }
+eq('$0 → ×1.0', BLH.dragon_mult(), 1.0)
+G.GAME.dollars = 25
+eq('$25 → ×1.1', math.floor(BLH.dragon_mult() * 10 + 0.5) / 10, 1.1)
+G.GAME.dollars = 75
+eq('$75 → ×1.3', math.floor(BLH.dragon_mult() * 10 + 0.5) / 10, 1.3)
+
+print('== 金钱来源：标签 / 财印 / 盲注结算 ==')
+do
+    local tag_by_key = {}
+    for _, t in ipairs(reg.tags) do tag_by_key[t.key] = t end
+    -- 鼠·寻金：立即给 $8
+    G.GAME = { challenge = 'blh_zhongyan', dollars = 0, hands = {} }
+    local t = { yep = function() end, triggered = false }
+    tag_by_key['rat_dao'].apply(tag_by_key['rat_dao'], t, { type = 'immediate' })
+    eq('鼠·寻金：立即 +$8', G.GAME.dollars, 8)
+    -- 马·竞速：本局每打出过 1 次牌型给 $1
+    G.GAME = { challenge = 'blh_zhongyan', dollars = 0,
+               hands = { Flush = { played = 3 }, Pair = { played = 2 } } }
+    local t2 = { yep = function() end, triggered = false }
+    tag_by_key['horse_speed'].apply(tag_by_key['horse_speed'], t2, { type = 'immediate' })
+    eq('马·竞速：5 手牌型 → +$5', G.GAME.dollars, 5)
+    -- 盲注结算：ante2 Boss，超额 10× 封顶 1.4，base 12 → 16 + 4 手 + 3 弃 = $23
+    G.GAME = { challenge = 'blh_zhongyan', dollars = 0, chips = 1000,
+               blind = { chips = 100 },
+               round_resets = { ante = 2 }, current_round = { hands_left = 4, discards_left = 3 } }
+    local b = { chips = 100, config = { blind = { key = 'bl_blh_rat' } }, get_type = function() return 'Boss' end }
+    eq('盲注结算：金额 = 基础×超额(10×→1.4) + 剩余次数', BLH.settle_blind(b), 23)
+    eq('盲注结算：直接进原版 dollars', G.GAME.dollars, 23)
+    -- P0 回归：G.GAME.blind 整局只创建一次（game.lua:2522），标记若挂在 blind 对象上
+    -- 会跨盲注残留 → 第 2 个盲注起永不再发奖
+    BLH.settle_blind(b)
+    eq('同一盲注重复 defeat 不重复发钱', G.GAME.dollars, 23)
+    G.GAME.round_resets.ante = 3
+    b.get_type = function() return 'Big' end
+    BLH.settle_blind(b)
+    eq('下一个盲注（同一个 blind 对象）仍会发钱', G.GAME.dollars, 23 + 18)
+    -- 初始化不再创建"道"字段
+    local fresh = Game.init_game_object(Game)
+    eq('初始化不再有道字段', fresh.blh_dao, nil)
+    eq('初始化仍保留赌命计数', fresh.blh_gamble, 0)
+end
 
 print('== 塔罗花色体系 ==')
 local by_key = {}
@@ -327,7 +367,7 @@ G.GAME.blind = { boss = false, chips = 100, chip_text = '100' }
 eq('勾城：商店/非进行中不可用', by_key['goucheng_pact']:can_use({}), false)
 G.GAME.challenge = nil
 G.GAME.blind = { boss = false, in_blind = true }
-eq('勾城：非本模式不可用（奖励按道结算）', by_key['goucheng_pact']:can_use({}), false)
+eq('勾城：非本模式不可用（挑战外不结算金钱奖励）', by_key['goucheng_pact']:can_use({}), false)
 
 -- 同一盲注不能重复签约：惩罚累乘而奖励只有单槽（economy.lua settle_blind 匹配后清空）
 G.GAME.challenge = 'blh_zhongyan'
@@ -426,13 +466,13 @@ eq('版本：全部声明 shader（否则加载崩溃）', ok_ed, true)
 
 -- 26.829.0 免死入口：mod.calculate + SMODS.saved
 eq('mod.calculate 已定义', type(SMODS.current_mod.calculate), 'function')
-G.GAME = { challenge = 'blh_zhongyan', blh_dao = 600, round_resets = { hands = 4, discards = 3, ante = 1 }, current_round = { hands_left = 4, discards_left = 3 } }
+G.GAME = { challenge = 'blh_zhongyan', dollars = 100, round_resets = { hands = 4, discards = 3, ante = 1 }, current_round = { hands_left = 4, discards_left = 3 } }
 local saved_ret = SMODS.current_mod.calculate(SMODS.current_mod, { end_of_round = true, game_over = true })
-eq('赌命：道足够时返回 saved', saved_ret ~= nil and saved_ret.saved, true)
-eq('赌命：扣除 500 道', G.GAME.blh_dao, 100)
-G.GAME.blh_dao = 0
+eq('赌命：钱足够时返回 saved', saved_ret ~= nil and saved_ret.saved, true)
+eq('赌命：扣除 $20', G.GAME.dollars, 80)
+G.GAME.dollars = 0
 G.GAME.blh_saved_round = nil
-eq('无道且无保护时不返回 saved', SMODS.current_mod.calculate(SMODS.current_mod, { end_of_round = true, game_over = true }), nil)
+eq('无钱且无保护时不返回 saved', SMODS.current_mod.calculate(SMODS.current_mod, { end_of_round = true, game_over = true }), nil)
 
 local ok_req = true
 for _, v in ipairs(reg.vouchers) do
@@ -626,7 +666,7 @@ eq('失败 end_of_round 分支均置 SMODS.saved' .. (#miss_saved > 0 and (' [�
 -- ③ 行为：赝品在回合结束只挂起，首手抽牌后才真正复制
 local yan
 for _, j in ipairs(reg.jokers) do if j.key == 'yan_pin' then yan = j end end
-G.GAME = { challenge = 'blh_zhongyan', blh_dao = 0, dollars = 10,
+G.GAME = { challenge = 'blh_zhongyan', dollars = 10,
            round_resets = { hands = 4, discards = 3, ante = 1 },
            current_round = { hands_left = 4, discards_left = 3 } }
 G.hand.cards = { card('Spades', 10, 'T'), card('Hearts', 11, 'J') }
@@ -666,19 +706,20 @@ eq('探囊：手牌 +1', #G.hand.cards, h0 + 1)
 eq('探囊：拿到的是那张强化牌', G.hand.cards[#G.hand.cards], enh)
 eq('探囊：牌堆已移除该牌', #G.deck.cards, 0)
 
--- ⑤ 行为：道结算幂等（Blind:defeat 重复调用不会重复发道）
-G.GAME = { challenge = 'blh_zhongyan', blh_dao = 0, chips = 1000,
+-- ⑤ 行为：金钱结算幂等（Blind:defeat 重复调用不会重复发钱）
+G.GAME = { challenge = 'blh_zhongyan', dollars = 0, chips = 1000,
            round_resets = { ante = 2 }, current_round = { hands_left = 4, discards_left = 3 } }
 local fake_blind = { chips = 100, config = { blind = { key = 'bl_blh_rat' } },
                      get_type = function() return 'Boss' end }
 BLH.settle_blind(fake_blind)
-local dao1 = BLH.dao()
+local money1 = BLH.money()
 BLH.settle_blind(fake_blind)
-eq('道结算幂等', BLH.dao(), dao1)
-eq('道结算有产出', dao1 > 0, true)
+eq('金钱结算幂等', BLH.money(), money1)
+eq('金钱结算有产出', money1 > 0, true)
 
--- ⑥ 行为：勾城契约只对签约的那个盲注生效
-G.GAME.blh_dao = 0
+-- ⑥ 行为：勾城契约只对签约的那个盲注生效（这里换一个全新结算场景）
+G.GAME.dollars = 0
+G.GAME.blh_settled = {}
 G.GAME.blh_pact_ante, G.GAME.blh_pact_blind = 2, 'bl_blh_horse'
 local other = { chips = 100, config = { blind = { key = 'bl_blh_rat' } }, get_type = function() return 'Boss' end }
 BLH.settle_blind(other)
@@ -706,7 +747,7 @@ eq('免死：同回合不重复消耗', G.GAME.blh_save_charges, 1)
 -- ⑨ 行为：生生不息 的产出上限（cap）必须生效，且按每 every 回合的节奏
 local ss
 for _, j in ipairs(reg.jokers) do if j.key == 'sheng_sheng_bu_xi' then ss = j end end
-G.GAME = { challenge = 'blh_zhongyan', blh_dao = 0, dollars = 10 }
+G.GAME = { challenge = 'blh_zhongyan', dollars = 10 }
 G.jokers = { cards = {}, config = { card_limit = 5 }, emplace = function(self, c) table.insert(self.cards, c) end }
 local ss_card = { ability = { extra = { every = 3, count = 0, made = 0, cap = 3 } }, juice_up = noop }
 local made_on = {}
@@ -729,7 +770,7 @@ eq('生生不息：小丑栏满时不扣上限', ss_card.ability.extra.made, 0)
 -- ⑩ 行为：巧物 需要在消耗品区有空位时才扣钱造牌
 local qw
 for _, j in ipairs(reg.jokers) do if j.key == 'qiao_wu' then qw = j end end
-G.GAME = { challenge = 'blh_zhongyan', blh_dao = 0, dollars = 10 }
+G.GAME = { challenge = 'blh_zhongyan', dollars = 10 }
 G.consumeables = { cards = {}, config = { card_limit = 2 }, emplace = function(self, c) table.insert(self.cards, c) end }
 local qw_card = { ability = { extra = { cost = 3 } }, juice_up = noop }
 qw.calculate(qw, qw_card, { end_of_round = true, main_eval = true, game_over = false })
@@ -747,7 +788,7 @@ eq('巧物：钱不够时不扣钱', G.GAME.dollars, 1)
 -- ⑪ 行为：不灭小丑的兜底分支不得抢在 mod 级免死入口之前触发
 local bm
 for _, j in ipairs(reg.jokers) do if j.key == 'bu_mie' then bm = j end end
-G.GAME = { challenge = 'blh_zhongyan', blh_dao = 0, blh_save_charges = 1 }
+G.GAME = { challenge = 'blh_zhongyan', blh_save_charges = 1, dollars = 0 }
 SMODS.saved = false
 local size_before = G.hand.config.card_limit
 local bm_card = { ability = { extra = { used = false } }, juice_up = noop }
@@ -759,7 +800,7 @@ eq('不灭兜底：不误置 saved', SMODS.saved, false)
 -- ⑫ 行为：镜像塔罗加牌后必须走原版配套流程（debuff / sort / playing_card_added）
 local mirror
 for _, c in ipairs(reg.consumables) do if c.key == 'mirror' then mirror = c end end
-G.GAME = { challenge = 'blh_zhongyan', blh_dao = 0, dollars = 10, round_resets = { before = 0 } }
+G.GAME = { challenge = 'blh_zhongyan', dollars = 10, round_resets = { before = 0 } }
 G.GAME.blind = { debuff_card = function(self, c) STUB.debuffed = (STUB.debuffed or 0) + 1 end }
 G.hand.cards = { card('Spades', 1, 'A') }
 G.hand.config.card_limit = 8
@@ -1014,7 +1055,7 @@ print('== 生生不息：回合计数与产出 ==')
 local ss
 for _, j in ipairs(reg.jokers) do if j.key == 'sheng_sheng_bu_xi' then ss = j end end
 local function ss_game()
-    return { challenge = 'blh_zhongyan', blh_dao = 0, round = 1, dollars = 4, modifiers = {}, banned_keys = {},
+    return { challenge = 'blh_zhongyan', round = 1, dollars = 4, modifiers = {}, banned_keys = {},
              round_resets = { hands = 4, ante = 5 },
              current_round = { hands_left = 4, discards_left = 3 } }
 end
@@ -1116,7 +1157,7 @@ local function new_blind(center)
     return { config = { blind = center }, chips = 1000, chip_text = '1000', disabled = false, boss = true }
 end
 local function base_game()
-    return { challenge = 'blh_zhongyan', blh_dao = 0, round = 3, dollars = 4,
+    return { challenge = 'blh_zhongyan', round = 3, dollars = 4,
              modifiers = {}, banned_keys = {},
              round_resets = { hands = 4, ante = 5 },
              current_round = { hands_left = 4, discards_left = 3, dollars_to_be_earned = '' } }
@@ -1201,10 +1242,10 @@ G.GAME.blind = new_blind(bk.pig)
 bk.pig.set_blind(bk.pig)
 eq('天猪：新一次登场会重新缩放', G.GAME.blind.chips ~= 1000, true)
 
--- 天龙：强度随道提升 + 天秤计分 ×0.5
-G.GAME = base_game(); G.GAME.blh_dao = 1000; G.GAME.blind = new_blind(bk.dragon)
+-- 天龙：强度随持有金钱提升 + 天秤计分 ×0.5
+G.GAME = base_game(); G.GAME.dollars = 50; G.GAME.blind = new_blind(bk.dragon)
 bk.dragon.set_blind(bk.dragon)
-eq('天龙：1000 道时强度 ×1.2', math.floor(G.GAME.blind.chips + 0.5), 1200)
+eq('天龙：持有 $50 时强度 ×1.2', math.floor(G.GAME.blind.chips + 0.5), 1200)
 local only_spades = { { is_suit = function(self, s) return s == 'Spades' end } }
 local mixed = { { is_suit = function(self, s) return s == 'Spades' end },
                 { is_suit = function(self, s) return s == 'Hearts' end } }
@@ -1307,7 +1348,7 @@ local tk = {}
 for _, t in ipairs(reg.tags) do tk[t.key] = t end
 
 local function audit_game()
-    return { challenge = 'blh_zhongyan', blh_dao = 0, round = 1, dollars = 10, modifiers = {}, banned_keys = {},
+    return { challenge = 'blh_zhongyan', round = 1, dollars = 10, modifiers = {}, banned_keys = {},
              round_resets = { hands = 4, discards = 3, ante = 5 },
              current_round = { hands_left = 4, discards_left = 3 },
              round_bonus = { next_hands = 0, discards = 0 } }
@@ -1524,9 +1565,12 @@ do
 end
 eq('生肖印：repetition 返回 repetitions=1', (sl.zodiac.calculate(sl.zodiac, { ability = { seal = {} } }, { repetition = true, cardarea = G.play }) or {}).repetitions, 1)
 do
-    local dcard = { ability = { seal = { dao = 15 } } }
-    local dret = sl.dao.calculate(sl.dao, dcard, { main_scoring = true, cardarea = G.play })
-    eq('道印：打出时返回给道提示', type(dret) == 'table', true)
+    -- 财印（原道印）：道并入金钱后与玉印同走 dollars 通道，且不手调 ease_dollars
+    local dcard = { ability = { seal = { dollars = 2 } } }
+    local before = G.GAME.dollars
+    local dret = sl.dao.calculate(sl.dao, dcard, { main_scoring = true, cardarea = G.play }) or {}
+    eq('财印：打出时返回 $2', dret.dollars, 2)
+    eq('财印：不手调 ease_dollars（只 return）', G.GAME.dollars, before)
 end
 -- 涡印：槽位满时不生成，有空位时生成 1 张
 G.GAME = audit_game()
@@ -1623,7 +1667,7 @@ local function fake_tag(cfg)
     return t
 end
 local function game()
-    G.GAME = { challenge = 'blh_zhongyan', blh_dao = 0, round = 3, dollars = 10, modifiers = {}, banned_keys = {},
+    G.GAME = { challenge = 'blh_zhongyan', round = 3, dollars = 10, modifiers = {}, banned_keys = {},
                round_resets = { hands = 4, discards = 3, ante = 5 },
                current_round = { hands_left = 4, discards_left = 3, voucher = { 'v_blh_mask', spawn = { v_blh_mask = true } } },
                shop = { joker_max = 2 }, base_reroll_cost = 5 }

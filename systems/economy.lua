@@ -1,5 +1,6 @@
---- 终焉之地 · 道 经济系统
---- 规则：道仅由击败盲注产出；性能奖励封顶；唯一消耗是赌命；天龙强度随道提升
+--- 终焉之地 · 金钱经济系统
+--- 规则：金钱奖励仅由击败盲注额外产出（走原版 ease_dollars，HUD 直接可见）；
+---       性能奖励封顶；赌命消耗金钱；天龙强度随持有金钱提升
 
 local mod = SMODS.current_mod
 local BLH = {}
@@ -7,19 +8,17 @@ mod.blh = BLH
 
 BLH.CHALLENGE_ID = 'blh_zhongyan'
 BLH.JOKER_PREFIX = 'blh_'
-BLH.GAMBLE_COST = { 500, 800, 1200 }
-BLH.EARLY_DAO = 3600
+BLH.GAMBLE_COST = { 20, 35, 55 }
+-- 持有金钱 ≥ 该值时天龙提前降临
+BLH.EARLY_MONEY = 250
+-- 每持有这么多金钱，天龙强度 +10%
+BLH.DRAGON_PER = 25
 
 ------------------------------------------------------------------
--- 基础读写
+-- 基础读写（道已并入金钱：一律用原版 G.GAME.dollars / ease_dollars）
 ------------------------------------------------------------------
-function BLH.dao()
-    return (G.GAME and G.GAME.blh_dao) or 0
-end
-
-function BLH.add_dao(n)
-    if not (G.GAME and G.GAME.blh_dao) then return end
-    G.GAME.blh_dao = math.max(0, G.GAME.blh_dao + n)
+function BLH.money()
+    return (G.GAME and G.GAME.dollars) or 0
 end
 
 function BLH.in_challenge()
@@ -29,18 +28,20 @@ end
 ------------------------------------------------------------------
 -- 基础产出公式
 ------------------------------------------------------------------
-function BLH.small_reward(ante) return 10 + 5 * ante end
-function BLH.big_reward(ante) return 20 + 8 * ante end
+-- 数值按"金钱经济"重新定标（原道经济数值的 1/5 ~ 1/8，
+-- 因为原版金钱的稀缺度远高于道；原值见 AUDIT/DESIGN 的历史记录）
+function BLH.small_reward(ante) return 3 + math.floor(ante / 2) end
+function BLH.big_reward(ante) return 5 + ante end
 
 function BLH.boss_reward(ante)
     if ante <= 3 then
-        return 80      -- 人级
+        return 12      -- 人级
     elseif ante <= 7 then
-        return 130     -- 地级
+        return 20      -- 地级
     elseif ante <= 9 then
-        return 200     -- 天级
+        return 30      -- 天级
     end
-    return 400         -- 天龙
+    return 50          -- 天龙
 end
 
 -- 超额分数档位（封顶 +40%，反通胀第二道闸）
@@ -56,17 +57,26 @@ function BLH.overkill_mult(ratio)
 end
 
 ------------------------------------------------------------------
--- 结算：击败盲注时给道
+-- 结算：击败盲注时额外给钱
 ------------------------------------------------------------------
 function BLH.settle_blind(blind)
     if not BLH.in_challenge() then return end
     if not (blind and blind.get_type) then return end
-    -- 幂等：Blind:defeat 有可能被重复调用（例如中途读档），道不能重复发
-    if blind.blh_settled then return end
-    blind.blh_settled = true
 
     local ante = G.GAME.round_resets.ante
     local kind = blind:get_type()
+
+    -- 幂等：Blind:defeat 可能被重复调用（例如中途读档），奖励不能重复发。
+    -- 关键：G.GAME.blind 整局只创建一次（device game.lua:2522），
+    -- 而 Blind:set_blind（blind.lua:99-135）只重置固定字段、**不会清自定义字段**
+    -- → 标记若挂在 blind 对象上会跨盲注残留，导致第 2 个盲注起再也不发奖。
+    -- 改成记在 G.GAME（按 ante + 盲注 key 区分，且随存档保留）。
+    local blind_key = blind.config and blind.config.blind and blind.config.blind.key or nil
+    local marker = tostring(ante) .. ':' .. tostring(blind_key or kind)
+    G.GAME.blh_settled = G.GAME.blh_settled or {}
+    if G.GAME.blh_settled[marker] then return end
+    G.GAME.blh_settled[marker] = true
+
     local base
     if kind == 'Boss' then
         base = BLH.boss_reward(ante)
@@ -82,43 +92,25 @@ function BLH.settle_blind(blind)
     end
 
     local total = math.floor(base * BLH.overkill_mult(ratio))
-    total = total + (G.GAME.current_round.hands_left or 0) * 4
-    total = total + (G.GAME.current_round.discards_left or 0) * 3
+    total = total + (G.GAME.current_round.hands_left or 0)
+    total = total + (G.GAME.current_round.discards_left or 0)
 
     -- 勾城·契约：只对签约的那个盲注生效（按 ante + 盲注 key 匹配）
-    local blind_key = blind.config and blind.config.blind and blind.config.blind.key or nil
     if G.GAME.blh_pact_ante == ante and G.GAME.blh_pact_blind == blind_key then
         total = total * 2
     end
     G.GAME.blh_pact_ante, G.GAME.blh_pact_blind = nil, nil
 
-    BLH.add_dao(total)
-    BLH.announce(total)
+    -- 走原版 money 通道：HUD 金额直接变化并弹「+$N」（instant=true 跳过缓动）
+    ease_dollars(total, true)
     BLH.check_early()
 
     return total
 end
 
-function BLH.announce(total)
-    G.E_MANAGER:add_event(Event({ trigger = 'after', delay = 0.2, func = function()
-        attention_text({
-            text = '+' .. tostring(total) .. ' ' .. localize('blh_dao_name'),
-            scale = 1.1,
-            hold = 1.2,
-            major = G.GAME.blind,
-            backdrop_colour = G.C.GOLD,
-            align = 'cm',
-            offset = { x = 0, y = -0.3 },
-            silent = true,
-        })
-        play_sound('coin2', 1.1, 0.5)
-        return true
-    end }))
-end
-
--- 道 ≥ 3600：天龙提前降临（提前结局）
+-- 持有金钱 ≥ EARLY_MONEY：天龙提前降临（提前结局）
 function BLH.check_early()
-    if BLH.dao() < BLH.EARLY_DAO or G.GAME.blh_dragon_early then return end
+    if BLH.money() < BLH.EARLY_MONEY or G.GAME.blh_dragon_early then return end
     if G.GAME.won then return end   -- 已经通关就不再改底注
     G.GAME.blh_dragon_early = true
     local ante = G.GAME.round_resets.ante
@@ -138,13 +130,13 @@ function BLH.check_early()
     end
 end
 
--- 天龙强度随道提升：每 500 道 +10%
+-- 天龙强度随持有金钱提升：每 DRAGON_PER 金钱 +10%（不设上限：钱越多越难）
 function BLH.dragon_mult()
-    return 1 + math.floor(BLH.dao() / 500) * 0.1
+    return 1 + math.floor(BLH.money() / BLH.DRAGON_PER) * 0.1
 end
 
 ------------------------------------------------------------------
--- 赌命（道 ≥ 500 免死）
+-- 赌命（花得起 GAMBLE_COST 就免死一次，费用递增）
 ------------------------------------------------------------------
 function BLH.gamble_count()
     return (G.GAME and G.GAME.blh_gamble) or 0
@@ -156,12 +148,12 @@ function BLH.gamble_cost()
 end
 
 function BLH.can_gamble()
-    return BLH.in_challenge() and BLH.dao() >= BLH.gamble_cost()
+    return BLH.in_challenge() and BLH.money() >= BLH.gamble_cost()
 end
 
 function BLH.do_gamble()
     local cost = BLH.gamble_cost()
-    BLH.add_dao(-cost)
+    ease_dollars(-cost, true)
     G.GAME.blh_gamble = BLH.gamble_count() + 1
     G.E_MANAGER:add_event(Event({ trigger = 'after', delay = 0.1, func = function()
         attention_text({
@@ -212,7 +204,7 @@ local function try_revive_bumie()
     return false
 end
 
--- 死亡结算：免死充能 → 不灭（免费）→ 赌命（消耗道）
+-- 死亡结算：免死充能 → 不灭（免费）→ 赌命（消耗金钱）
 function BLH.try_revive()
     if not BLH.in_challenge() then return false end
     if G.GAME.blh_saved_round then return false end
@@ -253,31 +245,8 @@ mod.calculate = function(self, context)
     end
 end
 
--- HUD：道 计数器
-------------------------------------------------------------------
-local create_hud_ref = create_UIBox_HUD
-function create_UIBox_HUD()
-    local hud = create_hud_ref()
-    if BLH.in_challenge() then
-        table.insert(hud.nodes, {
-            n = G.UIT.O,
-            config = {
-                object = DynaText({
-                    string = { { ref_table = G.GAME, ref_value = 'blh_dao', prefix = localize('blh_dao_name') .. ': ' } },
-                    colours = { G.C.GOLD },
-                    scale = 0.45,
-                    shadow = true,
-                    pop_in = 0,
-                    non_recalc = true,
-                }),
-                align = 'tm',
-                offset = { x = 0, y = 0.7 },
-                major = G.ROOM_ATTACH,
-            },
-        })
-    end
-    return hud
-end
+-- 说明：原「道」HUD 补丁已删除。金钱是本模组唯一的产出资源，
+-- 原版 HUD 的 $ 计数就是唯一显示入口（不再自绘计数器，也就没有显示不出来的问题）。
 
 ------------------------------------------------------------------
 -- 初始化与结算挂载
@@ -285,8 +254,8 @@ end
 local init_game_object_ref = Game.init_game_object
 function Game:init_game_object()
     local ret = init_game_object_ref(self)
-    ret.blh_dao = 0
     ret.blh_gamble = 0
+    ret.blh_settled = {}
     ret.blh_dragon_early = false
     ret.blh_pact_ante = nil
     ret.blh_pact_blind = nil
@@ -301,7 +270,7 @@ function Blind:defeat(silent)
     BLH.settle_blind(self)
 end
 
---- 内容文件请直接用 BLH.add_dao(n)。
+--- 内容文件给钱请直接 ease_dollars(n)（或在自己的 calculate 里 return { dollars = n }）。
 --- 注意：不要往 SMODS 全局表挂自己的函数（污染 SMODS 命名空间，可能与未来版本冲突）。
 
 return BLH
