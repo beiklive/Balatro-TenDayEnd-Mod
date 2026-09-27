@@ -359,6 +359,12 @@ eq('索城：牌堆里有 base 缺失的卡时仍能正确命中', by_key['suoch
 by_key['suocheng_index']:use({}, nil, nil)
 eq('索城：use 在无可用牌堆时不崩', true, true)
 
+-- use 由 Card:use_consumeable 直接调用（不复查 can_use），资源被清空时不能崩
+G.GAME = { blind = { in_blind = true } }
+G.consumeables = G.consumeables or { config = { card_limit = 2 }, cards = {} }
+by_key['yucheng_memory']:use({}, nil, nil)
+eq('玉城·记忆：use 在「本局没用过消耗品」时不崩', true, true)
+
 print('== 小丑效果抽查 ==')
 local ling = nil
 for _, j in ipairs(reg.jokers) do if j.key == 'ling_shi' then ling = j end end

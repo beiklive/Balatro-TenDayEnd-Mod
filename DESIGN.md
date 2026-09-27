@@ -1017,8 +1017,8 @@ if context.end_of_round and not context.game_over and not context.blueprint
 
 | 对象 | 问题 | 修复 |
 |---|---|---|
-| **牛·负力**（标签） | 跳过盲注拿到标签时立刻 `ease_hands_played(1)`，但那一刻 `new_round()` 还没跑，**下一个盲注开场时 `hands_left` 被整体重置** → 加了等于没加 | 改写 `G.GAME.round_bonus.next_hands`（`new_round` 先算 `round_resets.hands + round_bonus.next_hands` 再清零 bonus），文案改为「下一次出牌回合 +1 出牌次数」 |
-| **兔·脱身**（标签） | 同上，`ease_discard(2)` 被下一回合重置抹掉 | 改写 `G.GAME.round_bonus.discards`，文案同步 |
+| **牛·负力**（标签） | 跳过盲注拿到标签时立刻 `ease_hands_played(1)`，但那一刻 `new_round()` 还没跑，**下一个盲注开场时 `hands_left` 被整体重置** → 加了等于没加 | 改写 `G.GAME.round_bonus.next_hands`：`new_round` 先算 `round_resets.hands + round_bonus.next_hands`（`state_events.lua:245`），**并在同一处把 bonus 清零**（`:262`）→ 只影响下一个回合、不会泄漏到再下一回合（device 复核确认），文案改为「下一次出牌回合 +1 出牌次数」 |
+| **兔·脱身**（标签） | 同上，`ease_discard(2)` 被下一回合重置抹掉 | 改写 `G.GAME.round_bonus.discards`（`state_events.lua:244` 计算、`:263` 清零），文案同步 |
 | **白虎·调停**（标签） | 跳过盲注时「当前盲注」其实已经打完，当场 `blind:disable()` 会作用在**旧盲注**上；旧盲注 chips 已满足时还会把状态推成 `NEW_ROUND` | 改为挂起 `G.GAME.blh_break_blind`，由 `mod.calculate` 在下一个盲注的 `setting_blind` 时机解除（已验证 SMODS 会把 mod 作为「个体计分目标」收到**所有** `calculate_context`） |
 
 ### 29.3 静默失败（做了但没有任何反馈）
@@ -1121,10 +1121,10 @@ local function after_score(context)  return context.post_joker or (context.main_
 - 献祭：zh 补「永恒或已负片的小丑不可献祭」，en 由「Eternal Jokers are spared」改为「Eternal or already-Negative Jokers cannot be sacrificed」（en 漏了负片，与实现不一致）
 - 二重身：补「售价最高」
 
-### 30.4 新增自动回归（344 → 368 项）
+### 30.4 新增自动回归（344 → 369 项）
 
 版本：`pre_joker` 结算与累计、`joker_main` 无效、蓝复制不计成长、`main_scoring + cardarea == G.play` 生效、
-`G.hand` 不计分、神兽合并返回；幻灵：勾城 4 种门槛、回声/道城盲注内外、索城 nil 卡池与 `use` 直调；文案 6 项（熵增/献祭/二重身，中英各一）。
+`G.hand` 不计分、神兽合并返回；幻灵：勾城 4 种门槛、回声/道城盲注内外、索城 nil 卡池与 `use` 直调；玉城 `use` 在资源为 nil 时不崩；文案 6 项（熵增/献祭/二重身，中英各一）。
 
 ### 30.5 仍需真机确认
 

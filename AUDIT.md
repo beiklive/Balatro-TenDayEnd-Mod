@@ -9,7 +9,7 @@
 | 设备版 Balatro + Steamodded 26.829.0 源码 dump | `/tmp/dump/dump/`（`game.lua`、`card.lua`、`blind.lua`、`cardarea.lua`、`functions/*.lua`、`SMODS/_/src/{game_object,overrides}.lua`） | 判定 Context / Hook / 生命周期是否真实存在 |
 | SMODS 参考源码 1.0.0-beta-1814a | `/Users/beiklive/Code/Other/Balatro2_mods/smods-1.0.0-beta-1814a`（`src/utils.lua` 等） | 设备版未 dump 的 SMODS 核心（`calculate_context`、`blueprint_effect`、`Blind:calculate`、`get_mods_scoring_targets`） |
 | 原版本地化 | `/Users/beiklive/Code/Other/Balatro_dev/game_original_files/localization/{zh_CN,en-us}.lua` | 术语与概率写法对齐 |
-| 自动回归 | `dev/test_blh.lua`（`luajit dev/test_blh.lua`，**368 项**） | 逐项行为断言（含版本/封印/贴纸/优惠券的行为与边界） |
+| 自动回归 | `dev/test_blh.lua`（`luajit dev/test_blh.lua`，**369 项**） | 逐项行为断言（含版本/封印/贴纸/优惠券的行为与边界） |
 | 静态审计 | `dev/boundary_report.py`、`dev/canuse_audit.py` | 边界矩阵、消耗品可用性 |
 
 > 设备版 26.829.0 是**权威**；SMODS 参考源码仅用于设备版未 dump 的核心文件，凡依赖它的结论都标注 `[REF-ONLY]`。
@@ -424,17 +424,18 @@
 | 版本（扑克牌） | 回响在**重触发**（红印等）当次出牌会按重触发次数再成长一次 | 保留：与原版 foil/holo/poly 每次重复结算一次的行为一致；成长值小（+2/次），不做特例 |
 | 版本 `get_weight` | 用基类默认实现，不乘 `G.GAME.edition_rate` | 保留：本模组的版本稀有度按自身 `weight` 曲线设计 |
 
-### 15.4 本轮新增回归（344 → 368 项）
+### 15.4 本轮新增回归（344 → 369 项）
 
 - 勾城·契约：Boss 不可用 / 盲注进行中可用 / **商店不可用** / 非本模式不可用（4 项）
 - 回声 / 道城·轮回：盲注外不可用、盲注内可用
 - 索城·索引：手牌/牌堆含 `base == nil`（石头牌类）时不崩、`use` 被直接调用也不崩
+- 玉城·记忆：`use` 在「本局没用过消耗品」（`blh_used_consumables` 为 nil）时不崩——`Card:use_consumeable`（`card.lua:1408-1421`）直接调 `use`、不复查 `can_use`
 - 版本：`pre_joker` 结算与累计、`joker_main` 无效、蓝复制不计成长、`main_scoring + cardarea == G.play` 生效（扑克牌）、`G.hand` 不计分、神兽合并返回
 - 文案：熵增（石头牌/万能牌无点数花色）、献祭（永恒/负片不可献祭）、二重身（售价最高）中英各断言一次（6 项）
 
 ### 15.5 二次审计（v2.4.0）
 
 - 语法：`for f in content/*.lua systems/*.lua main.lua localization/*.lua; do luajit -bl "$f"; done` → 全绿
-- 行为：`luajit dev/test_blh.lua` → **368/368（ALL PASS）**
+- 行为：`luajit dev/test_blh.lua` → **369/369（ALL PASS）**
 - 静态：`python3 dev/boundary_report.py` → 虚拟告警 **0**；`python3 dev/canuse_audit.py` → 26 个对象，25 项 OK，1 项为既有误报（`mirror`「缺检查: 牌堆」：`can_use` 已正确检查手牌空位，`use` 里读的是 `G.deck.config.card_limit` 上限自增）
 - 交叉复核：`grep -n "context.joker_main" content/editions.lua` → 无命中；`grep -c "^local BLH" content/spectrals.lua` → 1

@@ -220,7 +220,9 @@ SMODS.Consumable {
         return used ~= nil and #used > 0 and #G.consumeables.cards < G.consumeables.config.card_limit
     end,
     use = function(self, card, area, copier)
-        local used = G.GAME.blh_used_consumables
+        -- use 由 Card:use_consumeable 直接调用、不会复查 can_use（card.lua:1408-1421），自己兜 nil
+        local used = G.GAME and G.GAME.blh_used_consumables
+        if not used or #used == 0 then return end
         local pool = {}
         for i = math.max(1, #used - 2), #used do pool[#pool + 1] = used[i] end
         local key = pseudorandom_element(pool, pseudoseed('blh_yucheng' .. tostring(G.GAME.round or 0)))
