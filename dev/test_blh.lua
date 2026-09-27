@@ -79,6 +79,8 @@ SMODS = {
     change_base = function(card, suit, rank) card.base = card.base or {}; card.base.value = rank or card.base.value; return card end,
     destroy_cards = function(t) t.destroyed = true end,
     has_no_suit = function(card) return card.no_suit == true end,
+    -- 设备侧：SMODS.Enhancement stone 有 no_rank = true（game_object.lua:3447-3452），wild 只有 any_suit
+    has_no_rank = function(card) return card.no_rank == true or card.enh == 'm_stone' end,
     get_probability_vars = function(_, n, d) return n, d end,
     pseudorandom_probability = function() return true end,
     calculate_effect = noop,
@@ -327,6 +329,17 @@ G.GAME.challenge = nil
 G.GAME.blind = { boss = false, in_blind = true }
 eq('勾城：非本模式不可用（奖励按道结算）', by_key['goucheng_pact']:can_use({}), false)
 
+-- 同一盲注不能重复签约：惩罚累乘而奖励只有单槽（economy.lua settle_blind 匹配后清空）
+G.GAME.challenge = 'blh_zhongyan'
+G.GAME.round_resets = { ante = 3, hands = 4, discards = 3 }
+G.GAME.blind = { boss = false, in_blind = true, config = { blind = { key = 'bl_small' } } }
+eq('勾城：未签约时可用', by_key['goucheng_pact']:can_use({}), true)
+G.GAME.blh_pact_blind, G.GAME.blh_pact_ante = 'bl_small', 3
+eq('勾城：同一盲注已签约后不可再用', by_key['goucheng_pact']:can_use({}), false)
+G.GAME.blh_pact_blind = 'bl_big'
+eq('勾城：签约绑的是别的盲注时不拦（跳过盲注留下的残留）', by_key['goucheng_pact']:can_use({}), true)
+G.GAME.blh_pact_blind, G.GAME.blh_pact_ante = nil, nil
+
 -- 回声 / 道城·轮回：商店里用它们没有意义（改的是本盲注内的出牌/弃牌次数）
 G.GAME = { current_round = { hands_left = 2, discards_left = 3 }, round_resets = { hands = 4, discards = 3 } }
 eq('回声：盲注外不可用', by_key['echo']:can_use({}), false)
@@ -348,16 +361,24 @@ eq('献祭 en 文案同步（Eternal or already-Negative）', loc_text('offering
 eq('二重身 zh 文案写明取售价最高', loc_text('doppelganger', 'zh_CN', 1):find('价值最高') ~= nil, true)
 eq('二重身 en 文案写明 most expensive', loc_text('doppelganger', 'en-us', 2):find('most expensive') ~= nil, true)
 
--- 索城·索引：卡池里有 base 缺失的卡（石头牌等）时不能崩
+-- 索城·索引：base 为 nil 的卡（用 G.P_CARDS.empty / 非扑克牌构造）与"无点数"语义
 G.GAME = { blind = { in_blind = true } }
 G.hand.config = G.hand.config or { card_limit = 8 }
 G.hand.cards = { { base = nil, ability = {} } }
-eq('索城：手里全是没有点数的牌时不可用（不崩）', by_key['suocheng_index']:can_use({}), false)
+eq('索城：手里全是 base 为 nil 的牌时不可用（不崩）', by_key['suocheng_index']:can_use({}), false)
 G.hand.cards = { card('Spades', 12, 'Q'), { base = nil, ability = {} } }
 G.deck.cards = { { base = nil, ability = {} }, card('Hearts', 12, 'Q') }
-eq('索城：牌堆里有 base 缺失的卡时仍能正确命中', by_key['suocheng_index']:can_use({}), true)
+eq('索城：牌堆里有 base 为 nil 的卡时仍能正确命中', by_key['suocheng_index']:can_use({}), true)
 by_key['suocheng_index']:use({}, nil, nil)
 eq('索城：use 在无可用牌堆时不崩', true, true)
+
+-- 判别性断言：石头牌的 base.id 是隐藏底牌点数，但引擎按"无点数"处理（Card:get_id() → 随机负数）
+G.hand.cards = { card('Spades', 10, 'T'), { base = { id = 14, value = 'A' }, ability = {}, no_rank = true } }
+G.deck.cards = { card('Hearts', 14, 'A') }
+eq('索城：无点数的牌不会被当成「手中点数最高」（否则会把 A 拉进手牌）',
+    by_key['suocheng_index']:can_use({}), false)
+G.deck.cards = { card('Hearts', 14, 'A'), card('Clubs', 10, 'T') }
+eq('索城：按真正的最高点数（T）命中牌堆', by_key['suocheng_index']:can_use({}), true)
 
 -- use 由 Card:use_consumeable 直接调用（不复查 can_use），资源被清空时不能崩
 G.GAME = { blind = { in_blind = true } }

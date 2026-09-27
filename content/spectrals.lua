@@ -45,6 +45,12 @@ local ENHANCEMENTS = { 'm_bonus', 'm_mult', 'm_wild', 'm_glass', 'm_steel', 'm_s
 
 local function hand_card_count() return (G.hand and #G.hand.cards) or 0 end
 
+-- 当前盲注的 key（勾城·契约按它绑定，避免把签约绑到"只记 ante"上）
+local function current_blind_key()
+    local blind = G.GAME and G.GAME.blind
+    return blind and blind.config and blind.config.blind and blind.config.blind.key or nil
+end
+
 -- 记录本局使用过的消耗品（玉城·记忆 需要）
 local use_consumeable_ref = Card.use_consumeable
 function Card:use_consumeable(area, copier)
@@ -273,8 +279,8 @@ SMODS.Consumable {
     key = 'goucheng_pact', set = 'Spectral', atlas = 'blh_spectral', pos = { x = 3, y = 1 }, cost = 4, discovered = true,
     config = { extra = { penalty = 0.5, reward = 2 } },
     loc_txt = loc('勾城·契约', 'Goucheng: Contract',
-        { '与本盲注签约：所需分数 {C:red}+#1#{}', '击败该盲注时，获得的{C:attention}道{} {C:money}×#2#{}', '{C:inactive}（只能在小盲注 / 大盲注时使用，Boss 盲注不可用）' },
-        { 'Sign a contract with this Blind: it needs {C:red}+#1#{} score', 'defeating it grants {C:money}×#2#{} the usual {C:attention}Dao{}', '{C:inactive}(only usable on Small / Big Blinds, not on Boss Blinds)' }),
+        { '与本盲注签约：所需分数 {C:red}+#1#{}', '击败该盲注时，获得的{C:attention}道{} {C:money}×#2#{}', '{C:inactive}（只能在小盲注 / 大盲注使用，Boss 盲注不可用；同一盲注只能签一次）' },
+        { 'Sign a contract with this Blind: it needs {C:red}+#1#{} score', 'defeating it grants {C:money}×#2#{} the usual {C:attention}Dao{}', '{C:inactive}(only on Small / Big Blinds, not Boss; once per Blind)' }),
     loc_vars = function(self, iq)
         return { vars = { tostring(self.config.extra.penalty * 100) .. '%', self.config.extra.reward } }
     end,
@@ -283,14 +289,21 @@ SMODS.Consumable {
     -- 签约会把 +50% 打在死盲注上、奖励永不匹配 = $4 白费。
     -- 并限定本模式：奖励只在挑战内按「道」结算（economy.lua），普通局抽到是纯自伤。
     can_use = function(self, card)
-        return G.GAME ~= nil and G.GAME.blind ~= nil and G.GAME.blind.in_blind == true
-            and not G.GAME.blind.boss and BLH.in_challenge() == true
+        if not (G.GAME ~= nil and G.GAME.blind ~= nil and G.GAME.blind.in_blind == true) then return false end
+        if G.GAME.blind.boss or BLH.in_challenge() ~= true then return false end
+        -- 同一盲注不能重复签约：惩罚在 use 里是累乘（chips ×1.5），但奖励只有一个槽位
+        -- （BLH.settle_blind 匹配 ante + 盲注 key 后 ×2 并立刻清空）→ 第 2 张只加惩罚、拿不到奖励。
+        local key = current_blind_key()
+        if G.GAME.blh_pact_blind ~= nil and G.GAME.blh_pact_blind == key
+            and G.GAME.round_resets ~= nil and G.GAME.blh_pact_ante == G.GAME.round_resets.ante then
+            return false
+        end
+        return true
     end,
     use = function(self, card, area, copier)
         -- 契约绑定到"当前这个盲注"，而不是只记 ante
         G.GAME.blh_pact_ante = G.GAME.round_resets.ante
-        G.GAME.blh_pact_blind = G.GAME.blind and G.GAME.blind.config
-            and G.GAME.blind.config.blind and G.GAME.blind.config.blind.key or nil
+        G.GAME.blh_pact_blind = current_blind_key()
         if G.GAME.blind and G.GAME.blind.chips then
             G.GAME.blind.chips = G.GAME.blind.chips * (1 + self.config.extra.penalty)
             G.GAME.blind.chip_text = number_format(G.GAME.blind.chips)
@@ -311,30 +324,35 @@ SMODS.Consumable {
     loc_txt = loc('索城·索引', 'Suocheng: Index',
         { '把牌堆中与手中{C:attention}点数最高{}的牌同点数的牌', '全部加入手牌', '{C:inactive}（需手牌有空位、牌堆里有同点数牌）' },
         { 'Adds every card in your deck that shares the rank of', 'the {C:attention}highest-ranked{} card in your hand', '{C:inactive}(needs a free slot and a matching card in the deck)' }),
+    -- "点数"必须按引擎语义取：无点数牌（石头牌 / 标了 no_rank 的强化）在 Card:get_id() 里
+    -- 返回随机负数（device card.lua:1174-1178），SMODS.has_no_rank 也是原版"手中最高点数"循环的守卫
+    -- （device card.lua:3710-3718，Raised Fist）。直接比 base.id 会让石头牌按隐藏底牌点数被选中。
     can_use = function(self, card)
         if hand_card_count() == 0 or #G.hand.cards >= G.hand.config.card_limit then return false end
         local top
-        -- base.id 可能为 nil（石头牌等无点数牌）；原版同类比较有 has_no_rank 防护
         for _, c in ipairs(G.hand.cards) do
-            if c.base and c.base.id and (not top or c.base.id > top.base.id) then top = c end
+            if c.base and c.base.id and not SMODS.has_no_rank(c)
+                and (not top or c.base.id > top.base.id) then top = c end
         end
         if not top then return false end
         for _, c in ipairs(G.deck.cards) do
-            if c.base and c.base.id == top.base.id then return true end
+            if c.base and c.base.id and not SMODS.has_no_rank(c) and c.base.id == top.base.id then return true end
         end
         return false
     end,
     use = function(self, card, area, copier)
         local top
-        -- base.id 可能为 nil（石头牌等无点数牌）；原版同类比较有 has_no_rank 防护
         for _, c in ipairs(G.hand.cards) do
-            if c.base and c.base.id and (not top or c.base.id > top.base.id) then top = c end
+            if c.base and c.base.id and not SMODS.has_no_rank(c)
+                and (not top or c.base.id > top.base.id) then top = c end
         end
         -- use 可能被别的 API 直接调用（不经 can_use），必须自己兜住 nil
         if not top then return end
         local pool = {}
         for _, c in ipairs(G.deck.cards) do
-            if c.base and c.base.id == top.base.id then pool[#pool + 1] = c end
+            if c.base and c.base.id and not SMODS.has_no_rank(c) and c.base.id == top.base.id then
+                pool[#pool + 1] = c
+            end
         end
         for _, c in ipairs(pool) do
             G.E_MANAGER:add_event(Event({ trigger = 'after', delay = 0.08, func = function()

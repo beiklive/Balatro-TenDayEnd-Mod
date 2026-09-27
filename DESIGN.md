@@ -1106,14 +1106,18 @@ local function after_score(context)  return context.post_joker or (context.main_
 
 | 卡 | 修正 |
 |---|---|
-| 勾城·契约 | 加 `G.GAME.blind.in_blind == true`（否则 +50% 打在死盲注上、奖励永不匹配 = $4 白费）+ `BLH.in_challenge()`（普通局只在挑战内按道结算） |
+| 勾城·契约 | 加 `G.GAME.blind.in_blind == true`（否则 +50% 打在死盲注上、奖励永不匹配 = $4 白费）+ `BLH.in_challenge()`（普通局只在挑战内按道结算）；再加「同一盲注已签约则不可用」——`use` 的惩罚是累乘，而奖励只有单槽（`economy.lua:89-93` 匹配后清空），否则第 2 张只加惩罚 |
 | 回声 | 加 `G.GAME.blind.in_blind == true` |
 | 道城·轮回 | 加 `G.GAME.blind.in_blind == true` |
 
 另外 `content/spectrals.lua` 此前引用**裸全局 `BLH`**（`systems/economy.lua:5` 里是 `local`）→ 勾城 `can_use` 必崩，已补 `local BLH = SMODS.current_mod.blh`。
 
-索城·索引：石头牌等无点数牌的 `base.id` 为 nil（`card.lua:139-141`），原版同类循环带 `SMODS.has_no_rank` 守卫（`card.lua:3713`）；
-两处循环已加 `c.base and c.base.id`，`top` 为 nil 时直接返回，`use` 内也兜一次（可能被别的 API 绕过 `can_use` 调用）。
+索城·索引有两个问题：
+
+1. **语义**：直接比 `base.id` 会把「无点数」牌当成「手中点数最高」。引擎的判定入口是 `Card:get_id()`（`card.lua:1174-1178`，无点数且未被吸血 → 随机负数），`SMODS.Enhancement stone` 定义 `no_rank = true`（`game_object.lua:3447-3452`，`wild` 只有 `any_suit`，有 rank）；原版「手中最高点数」循环（Raised Fist，`card.lua:3710-3718`）用 `SMODS.has_no_rank` 守卫。两处循环已按同样方式跳过无点数牌。
+2. **nil**：`c.base.id` 可能为 nil（非扑克牌 / 用本版本不存在的 `G.P_CARDS.empty` 构造的牌，`common_events.lua:2489`）；两处循环加 `c.base and c.base.id`，`top` 为 nil 时直接返回，`use` 内也兜一次（`Card:use_consumeable` 不复查 `can_use`）。
+
+> 注意：**不是**「石头牌 base.id 为 nil」——石头牌有隐藏底牌点数，它是 `no_rank` 而非 `base.id == nil`。
 
 ### 30.3 文案
 
@@ -1121,13 +1125,22 @@ local function after_score(context)  return context.post_joker or (context.main_
 - 献祭：zh 补「永恒或已负片的小丑不可献祭」，en 由「Eternal Jokers are spared」改为「Eternal or already-Negative Jokers cannot be sacrificed」（en 漏了负片，与实现不一致）
 - 二重身：补「售价最高」
 
-### 30.4 新增自动回归（344 → 369 项）
+### 30.4 新增自动回归（344 → 374 项）
 
 版本：`pre_joker` 结算与累计、`joker_main` 无效、蓝复制不计成长、`main_scoring + cardarea == G.play` 生效、
-`G.hand` 不计分、神兽合并返回；幻灵：勾城 4 种门槛、回声/道城盲注内外、索城 nil 卡池与 `use` 直调；玉城 `use` 在资源为 nil 时不崩；文案 6 项（熵增/献祭/二重身，中英各一）。
+`G.hand` 不计分、神兽合并返回；幻灵：勾城 4 种门槛、回声/道城盲注内外、索城 nil 卡池、`use` 直调与「无点数牌不算最高点数」判别性断言；勾城同一盲注不可重复签约；玉城 `use` 在资源为 nil 时不崩；文案 6 项（熵增/献祭/二重身，中英各一）。
 
 ### 30.5 仍需真机确认
+
+- 同一盲注内再用第二张「勾城·契约」应显示不可用；换盲注后恢复可用。
 
 - 标准补充包开出一张带「回响 / 波纹 / 神兽」的扑克牌，打出时确实给对应加成。
 - 商店里「勾城·契约」显示为不可用（灰掉），盲注进行中才可点。
 - 「索城·索引」在手里有石头牌时不崩、正常抽同点数牌。
+
+### 30.6 独立子代理复核（对抗性再验证）
+
+本轮修复完成后另派 1 个只读子代理独立复算全部结论。结果：**6 条断言全部成立**，并**纠正了我一处错误例证**
+（原写「石头牌 `base.id` 为 nil」不成立——石头牌是 `no_rank = true`，`base.id` 仍有隐藏底牌点数；nil 路径来自非扑克牌与
+`G.P_CARDS.empty` 构造的牌），同时发现 2 个真缺陷（已在本节修复）与 1 个无法确认可达的覆盖缺口（记为 WARN）。
+完整证据链见 `AUDIT.md` §15.6。
