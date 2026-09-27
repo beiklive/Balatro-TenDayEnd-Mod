@@ -4,6 +4,11 @@
 
 SMODS.Atlas { key = 'blh_spectral', path = 'blh_spectral.png', px = 71, py = 95 }
 
+-- P0 修复：本文件此前直接引用裸全局 BLH（economy.lua 里是 local），
+-- 勾城·契约的 can_use 会 attempt to index global 'BLH' 崩溃。
+local BLH = SMODS.current_mod.blh
+assert(BLH, 'content/spectrals.lua: mod.blh 未定义（systems/economy.lua 必须更早加载）')
+
 local function loc(zh_name, en_name, zh_text, en_text)
     return { ['zh_CN'] = { name = zh_name, text = zh_text }, ['en-us'] = { name = en_name, text = en_text } }
 end
@@ -65,7 +70,7 @@ SMODS.Consumable {
     config = {},
     loc_txt = loc('二重身', 'Doppelgänger',
         { '复制价值最高的{C:attention}小丑牌{}', '复制品为{C:dark_edition}负片{}', '{C:inactive}（全部小丑均为负片时无法使用）' },
-        { 'Creates a {C:dark_edition}Negative{} copy of', 'your most valuable {C:attention}Joker{}', '{C:inactive}(unusable when every Joker is Negative)' }),
+        { 'Creates a {C:dark_edition}Negative{} copy of', 'your {C:attention}most expensive{} Joker', '{C:inactive}(unusable when every Joker is Negative)' }),
     loc_vars = function(self, iq) iq[#iq + 1] = G.P_CENTERS.e_negative end,
     can_use = function(self, card) return #eligible_jokers(true) > 0 end,
     use = function(self, card, area, copier)
@@ -109,8 +114,8 @@ SMODS.Consumable {
     key = 'offering', set = 'Spectral', atlas = 'blh_spectral', pos = { x = 2, y = 0 }, cost = 4, discovered = true,
     config = { extra = { mult = 3 } },
     loc_txt = loc('献祭', 'Offering',
-        { '摧毁价值最低的可摧毁小丑', '获得其售价 {C:money}×#1#{} 的金钱', '{C:inactive}（永恒小丑无法被献祭）' },
-        { 'Destroys your least valuable Joker', 'Earn {C:money}#1#×{} its sell value', '{C:inactive}(Eternal Jokers are spared)' }),
+        { '摧毁{C:attention}售价最低{}的可摧毁小丑', '获得其售价 {C:money}×#1#{} 的金钱', '{C:inactive}（永恒或已负片的小丑不可献祭）' },
+        { 'Destroys your least valuable Joker', 'Earn {C:money}#1#×{} its sell value', '{C:inactive}(Eternal or already-Negative Jokers cannot be sacrificed)' }),
     loc_vars = function(self, iq) return { vars = { self.config.extra.mult } } end,
     can_use = function(self, card) return #eligible_jokers(false) > 0 end,
     use = function(self, card, area, copier)
@@ -130,8 +135,8 @@ SMODS.Consumable {
     key = 'entropy', set = 'Spectral', atlas = 'blh_spectral', pos = { x = 3, y = 0 }, cost = 4, discovered = true,
     config = {},
     loc_txt = loc('熵增', 'Entropy',
-        { '手中所有牌变为随机{C:attention}强化牌{}', '{C:inactive}（保留点数与花色）' },
-        { 'Turns every card in hand into a random {C:attention}Enhancement{}', '{C:inactive}(rank and suit are kept)' }),
+        { '手中所有牌变为随机{C:attention}强化牌{}', '{C:inactive}（点数与花色尽量保留；石头牌/万能牌本身没有点数或花色）' },
+        { 'Turns every card in hand into a random {C:attention}Enhancement{}', '{C:inactive}(rank/suit kept where the Enhancement has them)' }),
     can_use = function(self, card) return hand_card_count() > 0 end,
     use = function(self, card, area, copier)
         local targets = {}
@@ -155,8 +160,10 @@ SMODS.Consumable {
     loc_txt = loc('回声', 'Echo',
         { '返还本回合已用掉的{C:attention}出牌次数{}', '{C:inactive}（未用掉出牌次数时无法使用）' },
         { 'Refunds every {C:attention}Hand{} played this round', '{C:inactive}(unusable if no Hand was spent)' }),
+    -- 必须盲注进行中：商店里用会被下一盲注开局的 new_round 重置（state_events.lua:244），返还全废
     can_use = function(self, card)
-        return G.GAME ~= nil and G.GAME.current_round ~= nil and G.GAME.round_resets ~= nil
+        return G.GAME ~= nil and G.GAME.blind ~= nil and G.GAME.blind.in_blind == true
+            and G.GAME.current_round ~= nil and G.GAME.round_resets ~= nil
             and G.GAME.current_round.hands_left < G.GAME.round_resets.hands
     end,
     use = function(self, card, area, copier)
@@ -183,6 +190,7 @@ SMODS.Consumable {
         { '返还本回合已消耗的{C:attention}出牌次数{}与{C:attention}弃牌次数{}', '{C:inactive}（本回合没消耗过时无法使用）' },
         { 'Refunds the {C:attention}Hands{} and {C:attention}Discards{} spent this round', '{C:inactive}(unusable if you have not spent any this round)' }),
     can_use = function(self, card)
+        if not (G.GAME and G.GAME.blind and G.GAME.blind.in_blind == true) then return false end
         if not (G.GAME and G.GAME.current_round and G.GAME.round_resets) then return false end
         return G.GAME.current_round.hands_left < G.GAME.round_resets.hands
             or G.GAME.current_round.discards_left < G.GAME.round_resets.discards
@@ -268,8 +276,12 @@ SMODS.Consumable {
     loc_vars = function(self, iq)
         return { vars = { tostring(self.config.extra.penalty * 100) .. '%', self.config.extra.reward } }
     end,
+    -- 必须"盲注进行中"（blind.in_blind，device blind.lua:188）：商店里 G.GAME.blind 仍是已击败的盲注，
+    -- 签约会把 +50% 打在死盲注上、奖励永不匹配 = $4 白费。
+    -- 并限定本模式：奖励只在挑战内按「道」结算（economy.lua），普通局抽到是纯自伤。
     can_use = function(self, card)
-        return G.GAME ~= nil and G.GAME.blind ~= nil and not G.GAME.blind.boss
+        return G.GAME ~= nil and G.GAME.blind ~= nil and G.GAME.blind.in_blind == true
+            and not G.GAME.blind.boss and BLH.in_challenge() == true
     end,
     use = function(self, card, area, copier)
         -- 契约绑定到"当前这个盲注"，而不是只记 ante
@@ -299,16 +311,28 @@ SMODS.Consumable {
     can_use = function(self, card)
         if hand_card_count() == 0 or #G.hand.cards >= G.hand.config.card_limit then return false end
         local top
-        for _, c in ipairs(G.hand.cards) do if not top or c.base.id > top.base.id then top = c end end
+        -- base.id 可能为 nil（石头牌等无点数牌）；原版同类比较有 has_no_rank 防护
+        for _, c in ipairs(G.hand.cards) do
+            if c.base and c.base.id and (not top or c.base.id > top.base.id) then top = c end
+        end
         if not top then return false end
-        for _, c in ipairs(G.deck.cards) do if c.base.id == top.base.id then return true end end
+        for _, c in ipairs(G.deck.cards) do
+            if c.base and c.base.id == top.base.id then return true end
+        end
         return false
     end,
     use = function(self, card, area, copier)
         local top
-        for _, c in ipairs(G.hand.cards) do if not top or c.base.id > top.base.id then top = c end end
+        -- base.id 可能为 nil（石头牌等无点数牌）；原版同类比较有 has_no_rank 防护
+        for _, c in ipairs(G.hand.cards) do
+            if c.base and c.base.id and (not top or c.base.id > top.base.id) then top = c end
+        end
+        -- use 可能被别的 API 直接调用（不经 can_use），必须自己兜住 nil
+        if not top then return end
         local pool = {}
-        for _, c in ipairs(G.deck.cards) do if c.base.id == top.base.id then pool[#pool + 1] = c end end
+        for _, c in ipairs(G.deck.cards) do
+            if c.base and c.base.id == top.base.id then pool[#pool + 1] = c end
+        end
         for _, c in ipairs(pool) do
             G.E_MANAGER:add_event(Event({ trigger = 'after', delay = 0.08, func = function()
                 if #G.hand.cards < G.hand.config.card_limit then

@@ -1,6 +1,6 @@
 # 终焉之地 · beiklive助手 — 最终审计报告
 
-审计对象：`beiklive_helper` v2.3.6（120 个对象：小丑 30 / 优惠券 16 / 塔罗 21 / 幻灵 10 / 封印 5 / 版本 5 / 标签 16 / 盲注 12 / 贴纸 5）
+审计对象：`beiklive_helper` v2.4.0（120 个对象：小丑 30 / 优惠券 16 / 塔罗 21 / 幻灵 10 / 封印 5 / 版本 5 / 标签 16 / 盲注 12 / 贴纸 5）
 
 审计基准（**所有结论都必须能落到这些文件的行号上**）：
 
@@ -9,7 +9,7 @@
 | 设备版 Balatro + Steamodded 26.829.0 源码 dump | `/tmp/dump/dump/`（`game.lua`、`card.lua`、`blind.lua`、`cardarea.lua`、`functions/*.lua`、`SMODS/_/src/{game_object,overrides}.lua`） | 判定 Context / Hook / 生命周期是否真实存在 |
 | SMODS 参考源码 1.0.0-beta-1814a | `/Users/beiklive/Code/Other/Balatro2_mods/smods-1.0.0-beta-1814a`（`src/utils.lua` 等） | 设备版未 dump 的 SMODS 核心（`calculate_context`、`blueprint_effect`、`Blind:calculate`、`get_mods_scoring_targets`） |
 | 原版本地化 | `/Users/beiklive/Code/Other/Balatro_dev/game_original_files/localization/{zh_CN,en-us}.lua` | 术语与概率写法对齐 |
-| 自动回归 | `dev/test_blh.lua`（`luajit dev/test_blh.lua`，**344 项**） | 逐项行为断言（含版本/封印/贴纸/优惠券的行为与边界） |
+| 自动回归 | `dev/test_blh.lua`（`luajit dev/test_blh.lua`，**368 项**） | 逐项行为断言（含版本/封印/贴纸/优惠券的行为与边界） |
 | 静态审计 | `dev/boundary_report.py`、`dev/canuse_audit.py` | 边界矩阵、消耗品可用性 |
 
 > 设备版 26.829.0 是**权威**；SMODS 参考源码仅用于设备版未 dump 的核心文件，凡依赖它的结论都标注 `[REF-ONLY]`。
@@ -23,13 +23,13 @@
 | Joker | 30 | 25 | 4 | 1 | 0 |
 | Voucher | 16 | 16 | 2 → 修复后 0 | 0 | 0 |
 | Tarot | 21 | 21 | 2 → 修复后 0 | 2 → 修复后 0 | 0 |
-| Spectral | 10 | 10 | 0 | 0 | 0 |
+| Spectral | 10 | 10 | 0 | 1 → 修复后 0 | 0 |
 | Seal | 5 | 3 | 0 | 5 → 修复后 0 | 0 |
-| Edition | 5 | 5 | 0 | 0 | 0 |
+| Edition | 5 | 4 | 0 | 1 → 修复后 0 | 0 |
 | Tag | 16 | 13 | 3 → 修复后 0 | 3 → 修复后 0 | 0 |
 | Blind | 12 | 12 | 0 | 0 | 0 |
 | Sticker | 5 | 5 | 1 → 修复后 0 | 0 | 0 |
-| **合计** | **120** | **110** | **8** | **11** | **0** |
+| **合计** | **120** | **109** | **8** | **12** | **0** |
 
 计数口径：FAIL = 承诺的效果不存在或必然丢失；WARN = 功能可用但存在时机/文案/兼容性问题（本报告 §3–§5 逐条列出，**本轮已全部修复**，表内为修复前判定）。
 **BLOCKED = 0**：没有任何对象依赖不存在或无法验证的机制（依据 §6 能力矩阵）。
@@ -46,6 +46,8 @@
 | §22/§23 | 挑战内原版内容泄漏、`win_ante` 未设置 | 隔离时机在 `init_game_object` 之后；`win_ante` 从未赋值 | `functions/state_events.lua:280`、`game.lua:2561` |
 | §26 | 读档后盲注惩罚无法还原（手牌上限永久 -1） | 状态存在 SMODS.Blind 中心对象上，`Blind:load` 不会重调 `set_blind` | `blind.lua:774`（`save()` 只存固定字段） |
 | 本轮 | 盲注惩罚可能把出牌次数/手牌上限压到 0 → 无法出牌（soft-lock） | 人牛 `-1`、天狗 `-2` 未夹紧 | `content/blinds.lua`（已夹紧到 ≥1，见 §5） |
+| §15 | `content/spectrals.lua` 读裸全局 `BLH`（`systems/economy.lua:5` 里是 `local`）→ 勾城·契约 `can_use` 必崩 `attempt to index global 'BLH'` | 全仓仅本文件 `decl=0`（其余文件都有 `local BLH = ...`） | 补 `local BLH = SMODS.current_mod.blh` + `assert` |
+| §15 | 勾城·契约在**商店**可用：`G.GAME.blind` 此时是已击败的盲注（`in_blind` 为假）→ +50% 打在死盲注上、结算奖励永不匹配 = $4 白费；普通局抽到只能自伤 | 设备 `blind.lua:188`（`in_blind`）、`state_events.lua:280-282`（`setting_blind` 才重置盲注） | `can_use` 加 `G.GAME.blind.in_blind == true` + `BLH.in_challenge()` |
 
 ---
 
@@ -324,7 +326,7 @@
 ## 14. 独立切片审计合并（v2.3.6 → v2.3.9）
 
 除本报告 §22–§29 的自审外，另派 3 个**只读**子代理独立复核切片：优惠券+标签、封印+贴纸+塔罗+本地化、幻灵+版本。
-其中 2 份已返回（第三份未在时限内返回，其切片由 §22/§27 与 `dev/test_blh.lua` 覆盖）。
+3 份**全部已返回**（第三份见 §15）。
 所有结论都经我**回到设备源码逐条复核**后才落地修复。
 
 ### 14.1 独立审计发现并已修复的问题
@@ -387,3 +389,52 @@
 
 语法全绿；`luajit dev/test_blh.lua` → **344/344**；`boundary_report.py` 0 告警；`canuse_audit.py` 26/26（`mirror` 的"牌堆"提示为既有误报：它在 `use` 里读的是 `G.deck.config.card_limit` 上限自增，`can_use` 已正确检查手牌空位）；
 `grep` 复核：`content/seals.lua` 无手调 `ease_dollars`、`content/tags.lua` 无 `current_round.voucher = nil`、塔罗 2 处高亮上界、涡印守卫存在。
+
+---
+
+## 15. 第三份独立切片审计合并 + 扑克牌版本失效（v2.3.9 → v2.4.0）
+
+第三份只读子代理复核切片：**幻灵 10 + 版本 5**。所有结论同样回到设备源码逐条复核后才落地。
+
+### 15.1 发现并已修复的问题
+
+| 优先级 | 对象 | 问题 | 证据（设备源码） | 修复 |
+|---|---|---|---|---|
+| **P0** | `content/spectrals.lua` | 文件内直接读裸全局 `BLH`，而 `BLH` 是 `systems/economy.lua:5` 的 `local` → 勾城·契约 `can_use` 必崩 `attempt to index global 'BLH'` | 全仓扫描：仅本文件 `local BLH` 声明数 = 0（其余 5 个文件都有） | 补 `local BLH = SMODS.current_mod.blh` + `assert`（`content/spectrals.lua:7-11`） |
+| **P0** | 勾城·契约（幻灵） | `can_use` 只判 `G.GAME.blind ~= nil`：**商店里** `G.GAME.blind` 仍是已击败的那个盲注（`in_blind` 为假）→ `+50%` 打在死盲注上、挑战结算奖励永不匹配 = **$4 白费** | 设备 `blind.lua:188`（`in_blind` 字段）、`state_events.lua:280-282`（只有 `setting_blind` 才换盲注） | `can_use` 加 `G.GAME.blind.in_blind == true` + `BLH.in_challenge() == true` |
+| **P1** | 回声 / 道城·轮回（幻灵） | `can_use` 未要求盲注进行中 → 商店里也能用（回声复制手牌区、轮回改手牌上限，均无意义） | 同上一行 | 两处各加 `G.GAME.blind.in_blind == true` |
+| **P1** | 索城·索引（幻灵） | `can_use`/`use` 直接比较 `c.base.id`：石头牌等无点数牌的 `base.id` 为 **nil** → 比较 nil 崩溃；`top` 也可能为 nil 后仍被索引 | 设备 `card.lua:139-141`（`local rank = SMODS.Ranks[self.base.value] or {}` → `self.base.id = rank.id`）；原版同类循环带 `SMODS.has_no_rank` 守卫（`card.lua:3713`） | 循环加 `c.base and c.base.id`，`top` 为 nil 时直接 `return false` / `return`；`use` 里再兜一次（可能被别的 API 绕过 `can_use` 调用） |
+| **P1** | 5 个版本（Edition） | 只认 `pre_joker`/`post_joker`。这两个上下文只在小丑区循环里产生（`state_events.lua:679` 循环、`:682` pre_joker、`:772` post_joker），**扑克牌上完全不生效**；而标准补充包会给扑克牌 roll 版本（`card.lua:2103-2105`），版本池 cull 只看 `in_shop`（`common_events.lua:2271-2272`）→ 本模组 5 个版本会静默失效 | `functions/common_events.lua:744-749`（任何带版本的卡都会走 `card:calculate_edition(context)`）；计分主循环传 `{main_scoring=true, cardarea=G.play}`；原版写法 `SMODS/_/src/game_object.lua:3685/3718/3751` | 加 `before_score()` / `after_score()` 两个上下文助手（`context.pre_joker or (context.main_scoring and context.cardarea == G.play)` 等）；神兽在两个条件同时成立时**合并返回**，避免互相吃掉 |
+| P2 | 熵增（幻灵） | 文案「（保留点数与花色）」与实现不符：石头牌/万能牌本身没有点数或花色 | 实现读 `SMODS.get_enhancements` 全量随机 | 中英文案改为「点数与花色尽量保留；石头牌/万能牌本身没有点数或花色」 |
+| P2 | 献祭 / 二重身（幻灵） | 献祭未说明「永恒/负片小丑不可献祭」；二重身未说明取「售价最高」 | 实现自证（`eternal` 判定、`sell_cost` 排序） | 补文案 |
+| P3 | 版本测试 | 旧测试用 `individual` + `joker_main` 断言版本效果 → **测的是错上下文**（`state_events.lua:689` 会把 `joker_main` 的 edition 清空），掩盖了上一条 P1 | 设备 `state_events.lua:686-689` | 测试改为 `pre_joker`/`post_joker`/`main_scoring`，并断言 `joker_main` 返回 nil、蓝复制不计成长、`G.hand` 不计分、神兽合并返回 |
+
+### 15.2 独立审计确认无问题（保留记录）
+
+- 幻灵 10 张的 `can_use` / `use` 与 `SMODS.Consumable` 契约一致：`use` 只走 `G.E_MANAGER` 事件，无同步改牌区；负片复制路径与 `set_edition('e_negative', true)` 用法正确 ✓
+- 版本 `prefix_config = { shader = false }` 全 5 个 ✓；`SMODS.Edition` 基类自带 `get_weight`（`game_object.lua:3618`）→ 不会因缺 `get_weight` 在 `poll_edition` 里崩（旧 WARN 降级为"不参与 `edition_rate` 修正"，属设计选择）✓
+- 版本 `extra_cost` 会被 `Card:set_cost_value` 读取（`card.lua:508-515`），5 个版本的加价均生效 ✓
+
+### 15.3 仍未处理的 WARN（有意保留，非遗漏）
+
+| 对象 | WARN | 决定 |
+|---|---|---|
+| 索城·索引 | 索城定向抽牌不经 `draw_card` → 不触发 `SMODS.drawn_cards` / `stay_flipped` | 保留：与原版「Cryptid/Death」同属"直接改牌区"，且已在 §14.3 记录 |
+| 涡城 | 同上（定向生成） | 保留 |
+| 版本（扑克牌） | 回响在**重触发**（红印等）当次出牌会按重触发次数再成长一次 | 保留：与原版 foil/holo/poly 每次重复结算一次的行为一致；成长值小（+2/次），不做特例 |
+| 版本 `get_weight` | 用基类默认实现，不乘 `G.GAME.edition_rate` | 保留：本模组的版本稀有度按自身 `weight` 曲线设计 |
+
+### 15.4 本轮新增回归（344 → 368 项）
+
+- 勾城·契约：Boss 不可用 / 盲注进行中可用 / **商店不可用** / 非本模式不可用（4 项）
+- 回声 / 道城·轮回：盲注外不可用、盲注内可用
+- 索城·索引：手牌/牌堆含 `base == nil`（石头牌类）时不崩、`use` 被直接调用也不崩
+- 版本：`pre_joker` 结算与累计、`joker_main` 无效、蓝复制不计成长、`main_scoring + cardarea == G.play` 生效（扑克牌）、`G.hand` 不计分、神兽合并返回
+- 文案：熵增（石头牌/万能牌无点数花色）、献祭（永恒/负片不可献祭）、二重身（售价最高）中英各断言一次（6 项）
+
+### 15.5 二次审计（v2.4.0）
+
+- 语法：`for f in content/*.lua systems/*.lua main.lua localization/*.lua; do luajit -bl "$f"; done` → 全绿
+- 行为：`luajit dev/test_blh.lua` → **368/368（ALL PASS）**
+- 静态：`python3 dev/boundary_report.py` → 虚拟告警 **0**；`python3 dev/canuse_audit.py` → 26 个对象，25 项 OK，1 项为既有误报（`mirror`「缺检查: 牌堆」：`can_use` 已正确检查手牌空位，`use` 里读的是 `G.deck.config.card_limit` 上限自增）
+- 交叉复核：`grep -n "context.joker_main" content/editions.lua` → 无命中；`grep -c "^local BLH" content/spectrals.lua` → 1

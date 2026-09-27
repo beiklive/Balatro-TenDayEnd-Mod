@@ -315,10 +315,49 @@ eq('涡城：空手不可用', by_key['wocheng_vortex']:can_use({}), false)
 G.hand.cards = { card('Spades') }
 eq('涡城：有手牌可用', by_key['wocheng_vortex']:can_use({}), true)
 
-G.GAME = { blind = { boss = true }, current_round = { hands_left = 4, discards_left = 3 }, round_resets = { hands = 4, discards = 3 } }
+G.GAME = { challenge = 'blh_zhongyan', blind = { boss = true, in_blind = true },
+           current_round = { hands_left = 4, discards_left = 3 }, round_resets = { hands = 4, discards = 3 } }
 eq('勾城：Boss 盲注不可用', by_key['goucheng_pact']:can_use({}), false)
+G.GAME.blind = { boss = false, in_blind = true, chips = 100, chip_text = '100' }
+eq('勾城：盲注进行中的普通盲注可用', by_key['goucheng_pact']:can_use({}), true)
+-- 商店里（blind.in_blind 为假）不可用：否则 +50% 打在已击败的盲注上、奖励永不匹配
 G.GAME.blind = { boss = false, chips = 100, chip_text = '100' }
-eq('勾城：普通盲注可用', by_key['goucheng_pact']:can_use({}), true)
+eq('勾城：商店/非进行中不可用', by_key['goucheng_pact']:can_use({}), false)
+G.GAME.challenge = nil
+G.GAME.blind = { boss = false, in_blind = true }
+eq('勾城：非本模式不可用（奖励按道结算）', by_key['goucheng_pact']:can_use({}), false)
+
+-- 回声 / 道城·轮回：商店里用它们没有意义（改的是本盲注内的出牌/弃牌次数）
+G.GAME = { current_round = { hands_left = 2, discards_left = 3 }, round_resets = { hands = 4, discards = 3 } }
+eq('回声：盲注外不可用', by_key['echo']:can_use({}), false)
+eq('道城·轮回：盲注外不可用', by_key['daocheng_cycle']:can_use({}), false)
+G.GAME.blind = { in_blind = true }
+eq('回声：盲注内且已出牌可用', by_key['echo']:can_use({}), true)
+eq('道城·轮回：盲注内且已出牌可用', by_key['daocheng_cycle']:can_use({}), true)
+
+-- 幻灵文案必须说清实现里的限制（§15 审计：文案与实现不符）
+local function loc_text(key, locale, i)
+    local o = by_key[key]
+    local t = o and o.loc_txt and o.loc_txt[locale] and o.loc_txt[locale].text
+    return (t and t[i]) or ''
+end
+eq('熵增 zh 文案写明石头牌/万能牌没有点数花色', loc_text('entropy', 'zh_CN', 2):find('石头牌') ~= nil, true)
+eq('熵增 en 文案同步（rank/suit kept where ...）', loc_text('entropy', 'en-us', 2):find('rank/suit kept') ~= nil, true)
+eq('献祭 zh 文案写明永恒/负片不可献祭', loc_text('offering', 'zh_CN', 3):find('永恒') ~= nil and loc_text('offering', 'zh_CN', 3):find('负片') ~= nil, true)
+eq('献祭 en 文案同步（Eternal or already-Negative）', loc_text('offering', 'en-us', 3):find('Negative') ~= nil, true)
+eq('二重身 zh 文案写明取售价最高', loc_text('doppelganger', 'zh_CN', 1):find('价值最高') ~= nil, true)
+eq('二重身 en 文案写明 most expensive', loc_text('doppelganger', 'en-us', 2):find('most expensive') ~= nil, true)
+
+-- 索城·索引：卡池里有 base 缺失的卡（石头牌等）时不能崩
+G.GAME = { blind = { in_blind = true } }
+G.hand.config = G.hand.config or { card_limit = 8 }
+G.hand.cards = { { base = nil, ability = {} } }
+eq('索城：手里全是没有点数的牌时不可用（不崩）', by_key['suocheng_index']:can_use({}), false)
+G.hand.cards = { card('Spades', 12, 'Q'), { base = nil, ability = {} } }
+G.deck.cards = { { base = nil, ability = {} }, card('Hearts', 12, 'Q') }
+eq('索城：牌堆里有 base 缺失的卡时仍能正确命中', by_key['suocheng_index']:can_use({}), true)
+by_key['suocheng_index']:use({}, nil, nil)
+eq('索城：use 在无可用牌堆时不崩', true, true)
 
 print('== 小丑效果抽查 ==')
 local ling = nil
@@ -1401,23 +1440,37 @@ end
 eq('版本都声明了 shader', no_shader, 0)
 eq('版本都关闭了 shader 前缀（§17 崩溃根因）', bad_prefix, 0)
 
--- ② 版本行为
+-- ② 版本行为（device：小丑走 pre_joker/post_joker，扑克牌走 main_scoring + cardarea==G.play）
 G.GAME = audit_game(); G.GAME.dollars = 0
 local ecard = { ability = { echo_mult = 0 } }
-ed.echo.calculate(ed.echo, ecard, { individual = true, cardarea = G.play })
-ed.echo.calculate(ed.echo, ecard, { individual = true, cardarea = G.play })
-eq('回响：两张计分牌累计 +4', ecard.ability.echo_mult, 4)
-eq('回响：joker_main 返回 +4 倍率', (ed.echo.calculate(ed.echo, ecard, { joker_main = true }) or {}).mult, 4)
-local ecard2 = { ability = { echo_mult = 0 } }
-ed.echo.calculate(ed.echo, ecard2, { individual = true, cardarea = G.hand })
-eq('回响：不在出牌区不计分（不成长）', ecard2.ability.echo_mult, 0)
-ed.fragrance.calculate(ed.fragrance, { ability = {} }, { individual = true, cardarea = G.play })
-eq('清香：每张计分牌 +$1', G.GAME.dollars, 1)
-eq('波纹：×1.2 倍率', (ed.ripple.calculate(ed.ripple, {}, { joker_main = true }) or {}).xmult, 1.2)
-eq('生肖：+30 筹码', (ed.zodiac.calculate(ed.zodiac, {}, { joker_main = true }) or {}).chips, 30)
-ed.beast.calculate(ed.beast, { ability = {} }, { individual = true, cardarea = G.play })
-eq('神兽：每张计分牌 +$2', G.GAME.dollars, 3)
-eq('神兽：×1.1 倍率', (ed.beast.calculate(ed.beast, {}, { joker_main = true }) or {}).xmult, 1.1)
+-- 小丑：pre_joker 结算；joker_main 会被 state_events.lua:689 清空 → 必须无效
+ed.echo.calculate(ed.echo, ecard, { pre_joker = true, cardarea = G.jokers })
+ed.echo.calculate(ed.echo, ecard, { pre_joker = true, cardarea = G.jokers })
+eq('回响：两次出牌累计 +4', ecard.ability.echo_mult, 4)
+eq('回响：第 2 次 pre_joker 返回当前总倍率 4',
+    (ed.echo.calculate(ed.echo, { ability = { echo_mult = 2 } }, { pre_joker = true }) or {}).mult, 4)
+eq('回响：joker_main 无效（引擎已清空 edition）', ed.echo.calculate(ed.echo, ecard, { joker_main = true }), nil)
+eq('回响：蓝复制不计成长', ed.echo.calculate(ed.echo, ecard, { pre_joker = true, blueprint = 1 }), nil)
+-- 扑克牌：main_scoring + G.play 也必须生效（标准补充包会给扑克牌 roll 版本）
+local ccard = { ability = { echo_mult = 0 } }
+eq('回响：扑克牌 main_scoring 返回 +2 倍率',
+    (ed.echo.calculate(ed.echo, ccard, { main_scoring = true, cardarea = G.play }) or {}).mult, 2)
+eq('回响：扑克牌成长写入 ability', ccard.ability.echo_mult, 2)
+eq('回响：持牌区（G.hand）不计分', ed.echo.calculate(ed.echo, { ability = { echo_mult = 0 } }, { main_scoring = true, cardarea = G.hand }), nil)
+eq('清香：每次出牌 +$1（返回给引擎结算）',
+    (ed.fragrance.calculate(ed.fragrance, { ability = {} }, { pre_joker = true, cardarea = G.jokers }) or {}).dollars, 1)
+eq('清香：pre_joker 外无效', ed.fragrance.calculate(ed.fragrance, {}, { joker_main = true }), nil)
+eq('波纹：post_joker ×1.2 倍率', (ed.ripple.calculate(ed.ripple, {}, { post_joker = true }) or {}).xmult, 1.2)
+eq('波纹：扑克牌 ×1.2 倍率', (ed.ripple.calculate(ed.ripple, {}, { main_scoring = true, cardarea = G.play }) or {}).xmult, 1.2)
+eq('波纹：joker_main 无效', ed.ripple.calculate(ed.ripple, {}, { joker_main = true }), nil)
+eq('生肖：pre_joker +30 筹码', (ed.zodiac.calculate(ed.zodiac, {}, { pre_joker = true }) or {}).chips, 30)
+eq('生肖：扑克牌 +30 筹码', (ed.zodiac.calculate(ed.zodiac, {}, { main_scoring = true, cardarea = G.play }) or {}).chips, 30)
+eq('神兽：每次出牌 +$2（返回给引擎结算）',
+    (ed.beast.calculate(ed.beast, { ability = {} }, { pre_joker = true, cardarea = G.jokers }) or {}).dollars, 2)
+eq('神兽：post_joker ×1.1 倍率', (ed.beast.calculate(ed.beast, {}, { post_joker = true }) or {}).xmult, 1.1)
+local beast_pc = ed.beast.calculate(ed.beast, {}, { main_scoring = true, cardarea = G.play }) or {}
+eq('神兽：扑克牌同一次结算同时给倍率与钱（不互相吃掉）',
+    tostring(beast_pc.xmult) .. '/' .. tostring(beast_pc.dollars), '1.1/2')
 -- 版本必须带 in_shop / weight（否则不会出现在商店）
 local no_shop = 0
 for _, e in ipairs(reg.editions) do if e.in_shop ~= true or type(e.weight) ~= 'number' then no_shop = no_shop + 1 end end

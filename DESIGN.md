@@ -218,13 +218,26 @@
 
 | key | 名称 | 效果（实现） | shader |
 |---|---|---|---|
-| `blh_echo` | 回响 | 每打出 1 张**计分牌**本牌永久 +2 倍率；计分时返还累计值 | `foil` |
-| `blh_fragrance` | 清香 | 每张计分牌 +$1 | `holo` |
+| `blh_echo` | 回响 | 每次出牌本牌永久 +2 倍率；计分时返还累计值 | `foil` |
+| `blh_fragrance` | 清香 | 每次出牌 +$1 | `holo` |
 | `blh_ripple` | 波纹 | 计分时 ×1.2 倍率 | `polychrome` |
 | `blh_zodiac` | 生肖 | 计分时 +30 筹码 | `hologram` |
-| `blh_beast` | 神兽 | 计分时 ×1.1 倍率，且每张计分牌 +$2 | `foil` |
+| `blh_beast` | 神兽 | 计分时 ×1.1 倍率，且每次出牌 +$2 | `foil` |
 
 全部声明 `prefix_config = { shader = false }`（否则引擎按模组前缀找 `blh_foil` 之类不存在的 shader 会崩，见 §17），并带 `in_shop`/`weight`。
+
+**结算上下文（v2.4.0 修正，P0 级）**：版本效果只有两个合法入口，且**小丑与扑克牌不同**：
+
+| 载体 | 引擎传入的 context | device 证据 |
+|---|---|---|
+| 小丑 | `pre_joker`（成长/筹码/给钱）、`post_joker`（倍率） | `functions/state_events.lua:682`、`:772`；`:689` 会把 `joker_main` 里的 edition 显式清空 |
+| 扑克牌 | `main_scoring = true` 且 `cardarea == G.play` | `functions/common_events.lua:744-749`（任何带版本的卡都会走 `card:calculate_edition`），计分主循环传 `{main_scoring=true, cardarea=G.play}` |
+
+`pre_joker` 只在小丑区循环里产生（`state_events.lua:679` 循环），扑克牌永远不会命中它；而版本池 cull 只看 `in_shop`（`functions/common_events.lua:2271-2272`），
+所以标准补充包给扑克牌 roll 版本时（`card.lua:2103-2105`）本模组的 5 个版本都会落到扑克牌上。
+v2.4.0 前只认 `pre_joker`/`post_joker` → **扑克牌上的版本完全不生效（静默失效）**，现已按原版写法补上
+（原版 `SMODS/_/src/game_object.lua:3685/3718/3751` 同样是 `pre_joker`/`post_joker` 或 `main_scoring + cardarea == G.play`）。
+两个条件在小丑上互斥（引擎分两次调用），在扑克牌上同时成立，因此「神兽」必须合并返回，否则会互相吃掉一段。
 
 ### 9.2 封印（5，替换原版红/蓝/金/紫）
 
@@ -1058,3 +1071,61 @@ if context.end_of_round and not context.game_over and not context.blueprint
 - 「白虎·调停」应在下一个盲注**进场后**才解除限制，且不影响当前界面状态。
 - 「探囊」在牌堆没有强化牌时不再扣钱，并提示「牌堆没有强化牌」。
 - 「忘忧」在场时，盲注（如方片失效）不再让方片失效。
+
+## 30. 第四轮审计（v2.3.9 → v2.4.0）：版本在扑克牌上静默失效 + 幻灵使用门槛
+
+第三份独立切片（幻灵 + 版本）返回后，逐条回到设备源码复核，落地以下修改。完整报告见 `AUDIT.md` §15。
+
+### 30.1 版本（Edition）：错的是上下文，不是数值
+
+`pre_joker` / `post_joker` **只在小丑区循环里产生**（`functions/state_events.lua:679` 循环、`:682` pre_joker、`:772` post_joker），
+扑克牌永远不会命中它们。而版本池 cull 只看 `in_shop`（`functions/common_events.lua:2271-2272`），
+标准补充包会给扑克牌 roll 版本（`card.lua:2103-2105`）→ 本模组 5 个版本落在扑克牌上时**完全没有任何效果**。
+
+扑克牌的入口是 `functions/common_events.lua:744-749`（任何带版本的卡都走 `card:calculate_edition(context)`），
+计分主循环传 `{main_scoring = true, cardarea = G.play}`。原版三个版本的写法就是这个组合
+（`SMODS/_/src/game_object.lua:3685/3718/3751`：`pre_joker`/`post_joker` **或** `main_scoring and cardarea == G.play`）。
+
+修正：`content/editions.lua` 增加两个上下文助手
+
+```lua
+local function before_score(context) return context.pre_joker or (context.main_scoring and context.cardarea == G.play) end
+local function after_score(context)  return context.post_joker or (context.main_scoring and context.cardarea == G.play) end
+```
+
+- 「神兽」在扑克牌上两个条件同时成立，必须**合并返回** `{xmult, dollars}`，否则先 return 的分支会吃掉另一段。
+- 回响的成长只在 `before_score` 且非 `context.blueprint` 时写入（蓝复制不复制永久成长）。
+- 文案从「每张计分牌」统一改为「每次出牌」（小丑上确实每手只结算一次；扑克牌上按计分结算）。
+
+### 30.2 幻灵：`can_use` 必须限定"盲注进行中"
+
+商店里 `G.GAME.blind` 仍然是**已击败的那个盲注**（`blind.lua:188` 的 `in_blind` 只有 `set_blind` 时才为真，
+`state_events.lua:280` 才换盲注）。因此：
+
+| 卡 | 修正 |
+|---|---|
+| 勾城·契约 | 加 `G.GAME.blind.in_blind == true`（否则 +50% 打在死盲注上、奖励永不匹配 = $4 白费）+ `BLH.in_challenge()`（普通局只在挑战内按道结算） |
+| 回声 | 加 `G.GAME.blind.in_blind == true` |
+| 道城·轮回 | 加 `G.GAME.blind.in_blind == true` |
+
+另外 `content/spectrals.lua` 此前引用**裸全局 `BLH`**（`systems/economy.lua:5` 里是 `local`）→ 勾城 `can_use` 必崩，已补 `local BLH = SMODS.current_mod.blh`。
+
+索城·索引：石头牌等无点数牌的 `base.id` 为 nil（`card.lua:139-141`），原版同类循环带 `SMODS.has_no_rank` 守卫（`card.lua:3713`）；
+两处循环已加 `c.base and c.base.id`，`top` 为 nil 时直接返回，`use` 内也兜一次（可能被别的 API 绕过 `can_use` 调用）。
+
+### 30.3 文案
+
+- 熵增：「（保留点数与花色）」→「（点数与花色尽量保留；石头牌/万能牌本身没有点数或花色）」
+- 献祭：zh 补「永恒或已负片的小丑不可献祭」，en 由「Eternal Jokers are spared」改为「Eternal or already-Negative Jokers cannot be sacrificed」（en 漏了负片，与实现不一致）
+- 二重身：补「售价最高」
+
+### 30.4 新增自动回归（344 → 368 项）
+
+版本：`pre_joker` 结算与累计、`joker_main` 无效、蓝复制不计成长、`main_scoring + cardarea == G.play` 生效、
+`G.hand` 不计分、神兽合并返回；幻灵：勾城 4 种门槛、回声/道城盲注内外、索城 nil 卡池与 `use` 直调；文案 6 项（熵增/献祭/二重身，中英各一）。
+
+### 30.5 仍需真机确认
+
+- 标准补充包开出一张带「回响 / 波纹 / 神兽」的扑克牌，打出时确实给对应加成。
+- 商店里「勾城·契约」显示为不可用（灰掉），盲注进行中才可点。
+- 「索城·索引」在手里有石头牌时不崩、正常抽同点数牌。

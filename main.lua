@@ -7,7 +7,7 @@ local mod = SMODS.current_mod
 
 -- 崩溃界面显示的信息（官方 Mod Object 文档：mod.debug_info）
 mod.debug_info = {
-    version = 'v2.3.9',
+    version = 'v2.4.0',
     mode = '终焉之地',
     content = '30 回响小丑 / 21 塔罗 / 10 幻灵 / 16 优惠券 / 16 标签 / 12 生肖盲注 / 5 版本 / 5 封印 / 5 贴纸',
 }
