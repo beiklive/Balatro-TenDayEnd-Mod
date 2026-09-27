@@ -278,7 +278,8 @@ SMODS.Consumable {
     loc_vars = function(self, iq)
         return { vars = { tostring(self.config.extra.penalty * 100) .. '%', self.config.extra.reward } }
     end,
-    -- 必须"盲注进行中"（blind.in_blind，device blind.lua:188）：商店里 G.GAME.blind 仍是已击败的盲注，
+    -- 必须"盲注进行中"（blind.in_blind）：进入盲注时 blind.lua:188 置真，
+    -- 回合结束 end_round()（state_events.lua:95）置回 false → 商店里 G.GAME.blind 仍是已击败且 in_blind=false 的盲注，
     -- 签约会把 +50% 打在死盲注上、奖励永不匹配 = $4 白费。
     -- 并限定本模式：奖励只在挑战内按「道」结算（economy.lua），普通局抽到是纯自伤。
     can_use = function(self, card)

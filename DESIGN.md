@@ -1101,8 +1101,8 @@ local function after_score(context)  return context.post_joker or (context.main_
 
 ### 30.2 幻灵：`can_use` 必须限定"盲注进行中"
 
-商店里 `G.GAME.blind` 仍然是**已击败的那个盲注**（`blind.lua:188` 的 `in_blind` 只有 `set_blind` 时才为真，
-`state_events.lua:280` 才换盲注）。因此：
+商店里 `G.GAME.blind` 仍然是**已击败的那个盲注**：`in_blind` 只在 `Blind:set_blind` 里置真（`blind.lua:188`），
+并在回合结束 `end_round()` 里被置回 **false**（`state_events.lua:95`）；而 `G.GAME.blind` 本身要到下一次 `setting_blind` 才替换（`state_events.lua:280`）。因此：
 
 | 卡 | 修正 |
 |---|---|
